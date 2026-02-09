@@ -554,13 +554,21 @@ phase2_setup_chrome_certs() {
     local policy_file="/etc/opt/chrome/policies/managed/managed-extensions.json"
 
     # Install certs from folder (only if certs exist)
-    if [[ -d "$certs_dir" ]] && ls "$certs_dir"/*.pem "$certs_dir"/*.crt "$certs_dir"/*.cer &>/dev/null; then
+    # Check each extension separately - ls fails if ANY glob doesn't match
+    local has_certs=false
+    if [[ -d "$certs_dir" ]]; then
+        for ext in pem crt cer; do
+            ls "$certs_dir"/*."$ext" &>/dev/null && has_certs=true && break
+        done
+    fi
+
+    if [[ "$has_certs" == "true" ]]; then
         # Create NSS database only when we have certs to install
         if [[ ! -f "$nssdb_dir/cert9.db" ]]; then
             rm -rf "$nssdb_dir"
             mkdir -p "$nssdb_dir"
             chown "$NEW_USERNAME:$NEW_USERNAME" "$nssdb_dir"
-            printf '\n\n' | sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -N 2>/dev/null || true
+            echo "" | sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -N 2>/dev/null || true
             log_info "NSS database created"
         fi
 
@@ -569,6 +577,7 @@ phase2_setup_chrome_certs() {
         # Skip chrome_root_store_certs.pem - those are already in Chrome's built-in store
         local cert_count=0
         local tmpdir=$(mktemp -d)
+        chmod 755 "$tmpdir"  # certutil runs as user, needs read access
         for cert_file in "$certs_dir"/*.pem "$certs_dir"/*.crt "$certs_dir"/*.cer; do
             [[ -f "$cert_file" ]] || continue
             local base_name=$(basename "$cert_file" | sed 's/\.[^.]*$//')
@@ -576,6 +585,7 @@ phase2_setup_chrome_certs() {
 
             # Split into individual certs
             csplit -z -f "$tmpdir/${base_name}_" -b '%02d.pem' "$cert_file" '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null || true
+            chmod 644 "$tmpdir"/*.pem 2>/dev/null || true
 
             for single_cert in "$tmpdir/${base_name}_"*.pem; do
                 [[ -f "$single_cert" ]] || continue
@@ -585,7 +595,9 @@ phase2_setup_chrome_certs() {
                 log_info "Installing cert: $cert_name"
 
                 sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -D -n "$cert_name" 2>/dev/null || true
-                sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -A -t "C,," -n "$cert_name" -i "$single_cert"
+                if ! sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -A -t "C,," -n "$cert_name" -i "$single_cert"; then
+                    log_warn "Failed to install cert $cert_name into NSS"
+                fi
 
                 cp "$single_cert" "/usr/local/share/ca-certificates/${cert_name}.crt" 2>/dev/null || true
                 cert_count=$((cert_count + 1))
@@ -723,6 +735,56 @@ phase2_setup_chrome_extensions() {
     }
 }
 EOF
+
+    # Inject CACertificates into the policy immediately so the file is always complete.
+    # This prevents cert loss if phase2_setup_chrome_certs is skipped or fails.
+    local certs_src="$INSTALL_DIR/certs"
+    if [[ -d "$certs_src" ]]; then
+        python3 << CERTEOF
+import json, glob, os
+
+certs_dir = '$certs_src'
+policy_file = '$policy_dir/managed-extensions.json'
+skip_files = {'chrome_root_store_certs.pem'}
+
+pem_certs = []
+for ext in ('*.pem', '*.crt', '*.cer'):
+    for cert_file in sorted(glob.glob(os.path.join(certs_dir, ext))):
+        if os.path.basename(cert_file) in skip_files:
+            continue
+        with open(cert_file, 'r') as f:
+            content = f.read()
+        current = []
+        in_cert = False
+        for line in content.strip().split('\n'):
+            if line.startswith('-----BEGIN CERTIFICATE-----'):
+                in_cert = True
+                current = [line]
+            elif line.startswith('-----END CERTIFICATE-----'):
+                current.append(line)
+                pem_certs.append('\n'.join(current))
+                in_cert = False
+            elif in_cert:
+                current.append(line)
+
+# Deduplicate
+seen = set()
+unique_certs = []
+for c in pem_certs:
+    if c not in seen:
+        seen.add(c)
+        unique_certs.append(c)
+
+if unique_certs:
+    with open(policy_file, 'r') as f:
+        policy = json.load(f)
+    policy['CACertificates'] = unique_certs
+    with open(policy_file, 'w') as f:
+        json.dump(policy, f, indent=4)
+        f.write('\n')
+    print(f'Injected {len(unique_certs)} CA certificate(s) into Chrome policy')
+CERTEOF
+    fi
 
     # Also store a backup copy
     mkdir -p /opt/chrome-direct/policies
