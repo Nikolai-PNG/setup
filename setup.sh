@@ -566,11 +566,13 @@ phase2_setup_chrome_certs() {
 
         # Split multi-cert PEM files and import each cert individually
         # (certutil -A only imports the first cert from a multi-cert PEM)
+        # Skip chrome_root_store_certs.pem - those are already in Chrome's built-in store
         local cert_count=0
         local tmpdir=$(mktemp -d)
         for cert_file in "$certs_dir"/*.pem "$certs_dir"/*.crt "$certs_dir"/*.cer; do
             [[ -f "$cert_file" ]] || continue
             local base_name=$(basename "$cert_file" | sed 's/\.[^.]*$//')
+            [[ "$base_name" == "chrome_root_store_certs" ]] && continue
 
             # Split into individual certs
             csplit -z -f "$tmpdir/${base_name}_" -b '%02d.pem' "$cert_file" '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null || true
@@ -594,14 +596,25 @@ phase2_setup_chrome_certs() {
         log_info "Installed $cert_count certificate(s) into NSS + system store"
 
         # Inject CACertificates into Chrome enterprise policy (Chrome Root Store)
-        if [[ -f "$policy_file" ]]; then
-            python3 << PYEOF
+        # Only inject custom/org certs (trusted_certs, intermediate_certs),
+        # NOT chrome_root_store_certs.pem (those 116 certs are already built into Chrome)
+        mkdir -p "$(dirname "$policy_file")"
+        if [[ ! -f "$policy_file" ]]; then
+            echo '{}' > "$policy_file"
+        fi
+        python3 << PYEOF
 import json, glob, os
 
 certs_dir = '$certs_dir'
+# Skip chrome_root_store_certs - they're already in Chrome's built-in trust store
+skip_files = {'chrome_root_store_certs.pem'}
+
 pem_certs = []
 for ext in ('*.pem', '*.crt', '*.cer'):
     for cert_file in sorted(glob.glob(os.path.join(certs_dir, ext))):
+        if os.path.basename(cert_file) in skip_files:
+            print(f'Skipping {os.path.basename(cert_file)} (already in Chrome Root Store)')
+            continue
         with open(cert_file, 'r') as f:
             content = f.read()
         current = []
@@ -633,9 +646,8 @@ with open('$policy_file', 'w') as f:
     f.write('\n')
 print(f'Injected {len(unique_certs)} CA certificate(s) into Chrome policy')
 PYEOF
-            # Update backup copy
-            cp "$policy_file" /opt/chrome-direct/policies/ 2>/dev/null || true
-        fi
+        # Update backup copy
+        cp "$policy_file" /opt/chrome-direct/policies/ 2>/dev/null || true
     else
         log_info "No certs found, skipping (Chrome will create NSS db on first run)"
     fi
