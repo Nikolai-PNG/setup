@@ -3,13 +3,12 @@
 # ============================================
 # Shimboot Setup Script
 # ============================================
-# Place in ~/setup/ with:
-#   - setup.conf
-#   - certs/       (SSL certificates)
-#   - extensions/  (Chrome extensions)
+# Lives in /opt/setup/ (cloned from GitHub).
+# Run: sudo setup [--status|--reset=1|--reset=2|--help]
 # ============================================
 
-INSTALL_DIR="/opt/shimboot-setup"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$SCRIPT_DIR"
 CONF_FILE="$INSTALL_DIR/setup.conf"
 STATUS_FILE="$INSTALL_DIR/status"
 
@@ -61,70 +60,34 @@ show_status() {
 }
 
 # ============================================
-# Install script system-wide
+# Install command symlink
 # ============================================
 install_system_wide() {
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local script_path="$(realpath "${BASH_SOURCE[0]}")"
-    local install_path="$INSTALL_DIR/setup.sh"
+    log_step "Setting up 'setup' command..."
 
-    log_step "Installing setup to $INSTALL_DIR..."
+    chmod +x "$INSTALL_DIR/setup.sh"
 
-    # Create install directory
-    mkdir -p "$INSTALL_DIR"
+    # Create 'setup' command symlink
+    ln -sf "$INSTALL_DIR/setup.sh" /usr/local/bin/setup
 
-    # Always copy fresh files from source
-    if [[ -f "$script_dir/setup.conf" ]]; then
-        cp "$script_dir/setup.conf" "$CONF_FILE"
-        log_info "Config installed"
-    elif [[ ! -f "$CONF_FILE" ]]; then
-        log_error "setup.conf not found in $script_dir"
-        exit 1
-    fi
-
-    # Copy setup script only if source and destination are different
-    if [[ "$script_path" != "$(realpath "$install_path" 2>/dev/null)" ]]; then
-        cp "$script_path" "$install_path"
-        log_info "Script copied to $install_path"
-    fi
-    chmod +x "$install_path"
-
-    # Copy certs folder if exists
-    if [[ -d "$script_dir/certs" ]]; then
-        cp -r "$script_dir/certs" "$INSTALL_DIR/"
-        log_info "Certs folder copied"
-    fi
-
-    # Copy extensions folder if exists
-    if [[ -d "$script_dir/extensions" ]]; then
-        cp -r "$script_dir/extensions" "$INSTALL_DIR/"
-        log_info "Extensions folder copied"
-    fi
-
-    # Create symlink
-    ln -sf "$INSTALL_DIR/setup.sh" /usr/local/bin/shimboot-setup
-    chmod +x /usr/local/bin/shimboot-setup
+    # Remove old symlink if present
+    rm -f /usr/local/bin/shimboot-setup
 
     # Create status file if needed
     [[ -f "$STATUS_FILE" ]] || touch "$STATUS_FILE"
 
-    log_info "Installed! Command 'shimboot-setup' now available"
+    log_info "Command 'sudo setup' now available"
 }
 
 # ============================================
 # Load config
 # ============================================
 load_config() {
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-    if [[ -f "$script_dir/setup.conf" ]]; then
-        source "$script_dir/setup.conf"
-        log_info "Loaded config from $script_dir/setup.conf"
-    elif [[ -f "$CONF_FILE" ]]; then
+    if [[ -f "$CONF_FILE" ]]; then
         source "$CONF_FILE"
         log_info "Loaded config from $CONF_FILE"
     else
-        log_error "No config file found!"
+        log_error "No config file found at $CONF_FILE"
         exit 1
     fi
 }
@@ -203,7 +166,7 @@ run_phase1() {
     echo -e "  2. Login as: ${GREEN}$NEW_USERNAME${NC}"
     echo -e "     Password: ${GREEN}$USER_PASSWORD${NC}"
     echo ""
-    echo -e "  3. Run: ${GREEN}sudo shimboot-setup${NC}"
+    echo -e "  3. Run: ${GREEN}sudo setup${NC}"
     echo ""
     echo -e "${RED}DO NOT log back into '$OLD_USERNAME'${NC}"
     echo ""
@@ -221,7 +184,7 @@ phase2_check_user() {
 
     if [[ "$current_user" == "$OLD_USERNAME" ]]; then
         log_error "Still logged in as '$OLD_USERNAME'!"
-        echo "Log in as '$NEW_USERNAME' and run 'sudo shimboot-setup' again"
+        echo "Log in as '$NEW_USERNAME' and run 'sudo setup' again"
         exit 1
     fi
 
@@ -396,7 +359,7 @@ phase2_setup_vpn() {
 
     cat > /usr/local/bin/vpn-on << 'EOF'
 #!/bin/bash
-source /opt/shimboot-setup/setup.conf
+source /opt/setup/setup.conf
 [[ -z "$TAILSCALE_EXIT_NODE" ]] && { echo "TAILSCALE_EXIT_NODE not set"; exit 1; }
 echo "Connecting to: $TAILSCALE_EXIT_NODE"
 sudo bash -c 'echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf'
@@ -1466,7 +1429,7 @@ phase2_setup_mac_changer() {
 
     cat > /usr/local/bin/mac-change << 'EOF'
 #!/bin/bash
-source /opt/shimboot-setup/setup.conf
+source /opt/setup/setup.conf
 IFACE="${NETWORK_INTERFACE:-wlan0}"
 echo "Randomizing MAC on $IFACE..."
 sudo ip link set "$IFACE" down
@@ -1479,7 +1442,7 @@ EOF
 
     cat > /usr/local/bin/mac-restore << 'EOF'
 #!/bin/bash
-source /opt/shimboot-setup/setup.conf
+source /opt/setup/setup.conf
 IFACE="${NETWORK_INTERFACE:-wlan0}"
 sudo ip link set "$IFACE" down
 sudo macchanger -p "$IFACE" 2>/dev/null || echo "Reboot to restore"
@@ -1809,7 +1772,7 @@ phase2_fix_permissions() {
         "/usr/local/bin/chrome-netns-setup.sh"
         "/usr/local/bin/chrome-direct"
         "/usr/local/bin/install-ssl-cert"
-        "/usr/local/bin/shimboot-setup"
+        "/usr/local/bin/setup"
         "/opt/chrome-direct/patch-extensions.sh"
         "/opt/chrome-direct/keep-active.sh"
         "/opt/chrome-direct/inject-unpacked.py"
@@ -1896,27 +1859,33 @@ main() {
 
     case "${1:-}" in
         --status) show_status; exit 0 ;;
-        --reset)
-            rm -rf "$INSTALL_DIR"
-            log_info "Reset complete. Run setup.sh again."
+        --reset=1|--reset=phase1)
+            # Full reset: clear ALL progress, start from scratch
+            rm -f "$STATUS_FILE"
+            touch "$STATUS_FILE"
+            log_info "Full reset. All progress cleared. Run 'sudo setup' to start from phase 1."
             exit 0
             ;;
-        --restart)
+        --reset=2|--reset=phase2)
+            # Reset phase 2 only: keep phase 1 done, re-run phase 2
             if [[ ! -f "$STATUS_FILE" ]]; then
-                log_error "No status file found. Nothing to restart."
+                log_error "No status file found. Nothing to reset."
                 exit 1
             fi
-            # Keep only phase1 steps, wipe all phase2 progress
-            grep -v '^phase2\|^delete_old_user\|^remove_bloat\|^install_deps\|^install_brave\|^install_vscode\|^install_chrome\|^install_tailscale\|^setup_vpn\|^setup_chrome_netns\|^setup_chrome_extensions\|^setup_chrome_certs\|^install_moonlight\|^install_steam\|^install_waydroid\|^setup_mac_changer\|^disable_kwallet\|^system_update\|^fix_permissions' "$STATUS_FILE" > "${STATUS_FILE}.tmp" 2>/dev/null || true
+            # Keep only phase1 entries, wipe everything else
+            grep -E '^(phase1|create_user|set_hostname)=done$' "$STATUS_FILE" > "${STATUS_FILE}.tmp" 2>/dev/null || true
             mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
-            log_info "Phase 2 progress cleared. Run 'sudo shimboot-setup' to re-run phase 2."
+            log_info "Phase 2 progress cleared. Run 'sudo setup' to re-run phase 2."
             exit 0
             ;;
         --help)
-            echo "Usage: $0 [--status|--reset|--restart|--help]"
+            echo "Usage: sudo setup [--status|--reset=1|--reset=2|--help]"
+            echo ""
+            echo "  (no args)  Run setup (auto-detects phase)"
             echo "  --status   Show completed steps"
-            echo "  --restart  Clear phase 2 progress, re-run from beginning of phase 2"
-            echo "  --reset    Full reset (deletes all setup data)"
+            echo "  --reset=1  Full reset (back to beginning of phase 1)"
+            echo "  --reset=2  Reset phase 2 only (re-run from beginning of phase 2)"
+            echo "  --help     Show this help"
             exit 0
             ;;
     esac
