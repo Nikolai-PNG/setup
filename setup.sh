@@ -1539,6 +1539,229 @@ phase2_system_update() {
     mark_done "system_update"
 }
 
+phase2_setup_kiosk_lock() {
+    log_step "Setting up kiosk lock (Ctrl+Shift+L)..."
+
+    local user_home="/home/$NEW_USERNAME"
+
+    # 1. Main toggle script
+    cat > /usr/local/bin/kiosk-lock << 'LOCKEOF'
+#!/bin/bash
+# Kiosk Lock - Toggle fullscreen lock mode
+# Bound to Ctrl+Shift+L via KDE custom shortcuts
+#
+# Lock: fullscreens active window, enforces focus, disables shortcuts,
+#        hides panels, blocks VT switching
+# Unlock: reverses everything
+
+LOCK_STATE="/tmp/kiosk-lock.state"
+BACKUP="/tmp/kiosk-lock-shortcuts.bak"
+SCRIPT_DIR="/usr/local/lib/kiosk-lock"
+KWIN_SCRIPT_NAME="kiosk_lock_enforce"
+
+run_kwin_script() {
+    local script="$1"
+    local name="$2"
+    local persist="${3:-false}"
+
+    qdbus org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$script" "$name" >/dev/null 2>&1
+    qdbus org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1
+
+    if [ "$persist" != "true" ]; then
+        sleep 0.3
+        qdbus org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$name" >/dev/null 2>&1
+    fi
+}
+
+disable_shortcuts() {
+    local src="$HOME/.config/kglobalshortcutsrc"
+    cp "$src" "$BACKUP"
+
+    # Set all current shortcut bindings to "none" except [khotkeys] section
+    awk '
+    BEGIN { in_khotkeys = 0 }
+    /^\[khotkeys\]/ { in_khotkeys = 1; print; next }
+    /^\[/ { in_khotkeys = 0 }
+    in_khotkeys { print; next }
+    /^[^_\[#][^=]*=.*,/ {
+        eq = index($0, "=")
+        name = substr($0, 1, eq)
+        val = substr($0, eq + 1)
+        comma = index(val, ",")
+        if (comma > 0) {
+            rest = substr(val, comma)
+            print name "none" rest
+            next
+        }
+    }
+    { print }
+    ' "$src" > "${src}.tmp" && mv "${src}.tmp" "$src"
+
+    qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1
+}
+
+restore_shortcuts() {
+    if [ -f "$BACKUP" ]; then
+        cp "$BACKUP" "$HOME/.config/kglobalshortcutsrc"
+        rm -f "$BACKUP"
+        qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1
+    fi
+}
+
+lock() {
+    # 1. Load persistent KWin script: fullscreens active window + enforces focus
+    run_kwin_script "$SCRIPT_DIR/focus-enforce.js" "$KWIN_SCRIPT_NAME" true
+
+    # 2. Hide panels (autohide so they don't show over fullscreen)
+    qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
+        'panels().forEach(function(p) { p.hiding = "autohide"; })' >/dev/null 2>&1
+
+    # 3. Disable all keyboard shortcuts except our unlock shortcut
+    disable_shortcuts &
+
+    # 4. Block VT switching
+    sudo /usr/local/bin/kiosk-vt-ctl lock >/dev/null 2>&1 &
+
+    # 5. Mark locked
+    echo "locked" > "$LOCK_STATE"
+}
+
+unlock() {
+    # 1. Restore shortcuts first (so reconfigure happens)
+    restore_shortcuts
+
+    # 2. Unfullscreen active window
+    local tmpscript
+    tmpscript=$(mktemp /tmp/kiosk_unfs_XXXXX.js)
+    echo 'if (workspace.activeClient) workspace.activeClient.fullScreen = false;' > "$tmpscript"
+    run_kwin_script "$tmpscript" "kiosk_unfs"
+    rm -f "$tmpscript"
+
+    # 3. Unload focus enforcement script
+    qdbus org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1
+
+    # 4. Show panels
+    qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
+        'panels().forEach(function(p) { p.hiding = "none"; })' >/dev/null 2>&1
+
+    # 5. Unblock VT switching
+    sudo /usr/local/bin/kiosk-vt-ctl unlock >/dev/null 2>&1
+
+    # 6. Remove lock state
+    rm -f "$LOCK_STATE"
+}
+
+# Toggle
+if [ -f "$LOCK_STATE" ]; then
+    unlock
+else
+    lock
+fi
+LOCKEOF
+    chmod +x /usr/local/bin/kiosk-lock
+
+    # 2. KWin focus enforcement script
+    mkdir -p /usr/local/lib/kiosk-lock
+    cat > /usr/local/lib/kiosk-lock/focus-enforce.js << 'JSEOF'
+(function() {
+    var target = workspace.activeClient;
+    if (!target) return;
+
+    target.fullScreen = true;
+
+    function onActivated(client) {
+        if (target && client !== target) {
+            workspace.activeClient = target;
+        }
+    }
+
+    function onRemoved(client) {
+        if (client === target) {
+            target = null;
+            workspace.clientActivated.disconnect(onActivated);
+            workspace.clientRemoved.disconnect(onRemoved);
+        }
+    }
+
+    workspace.clientActivated.connect(onActivated);
+    workspace.clientRemoved.connect(onRemoved);
+})();
+JSEOF
+
+    # 3. VT switching control helper (runs as root via sudoers)
+    cat > /usr/local/bin/kiosk-vt-ctl << 'VTEOF'
+#!/bin/bash
+case "$1" in
+    lock)
+        for f in /sys/class/vtconsole/vtcon*/bind; do
+            [ -f "$f" ] && echo 0 > "$f"
+        done
+        ;;
+    unlock)
+        for f in /sys/class/vtconsole/vtcon*/bind; do
+            [ -f "$f" ] && echo 1 > "$f"
+        done
+        ;;
+esac
+VTEOF
+    chmod +x /usr/local/bin/kiosk-vt-ctl
+
+    # 4. Sudoers entry for passwordless VT control
+    echo "$NEW_USERNAME ALL=(root) NOPASSWD: /usr/local/bin/kiosk-vt-ctl" > /etc/sudoers.d/kiosk-lock
+    chmod 440 /etc/sudoers.d/kiosk-lock
+
+    # 5. Register Ctrl+Shift+L shortcut in khotkeys (kded module)
+    local khotkeysrc="$user_home/.config/khotkeysrc"
+    local uuid="{f47ac10b-58cc-4372-a567-0e02b2c3d479}"
+
+    # Only add if not already present
+    if ! grep -q "Kiosk Lock" "$khotkeysrc" 2>/dev/null; then
+        # Increment DataCount in [Data] section
+        local current_count
+        current_count=$(sed -n '/^\[Data\]$/,/^\[/{s/^DataCount=//p}' "$khotkeysrc" 2>/dev/null)
+        if [[ -n "$current_count" ]]; then
+            local new_count=$((current_count + 1))
+            sed -i "/^\[Data\]$/,/^\[/{s/^DataCount=$current_count/DataCount=$new_count/}" "$khotkeysrc"
+
+            # Append new shortcut entry before [DirSelect Dialog] or at end of Data sections
+            cat >> "$khotkeysrc" << HOTEOF
+
+[Data_${new_count}]
+Comment=Toggle Kiosk Lock (fullscreen + block escape)
+Enabled=true
+Name=Kiosk Lock
+Type=SIMPLE_ACTION_DATA
+
+[Data_${new_count}Actions]
+ActionsCount=1
+
+[Data_${new_count}Actions0]
+CommandURL=/usr/local/bin/kiosk-lock
+Type=COMMAND_URL
+
+[Data_${new_count}Conditions]
+Comment=
+ConditionsCount=0
+
+[Data_${new_count}Triggers]
+Comment=Simple_action
+TriggersCount=1
+
+[Data_${new_count}Triggers0]
+Key=Ctrl+Shift+L
+Type=SHORTCUT
+Uuid=$uuid
+HOTEOF
+            chown "$NEW_USERNAME:$NEW_USERNAME" "$khotkeysrc"
+            log_info "Registered Ctrl+Shift+L in khotkeysrc"
+        fi
+    else
+        log_info "Kiosk Lock shortcut already registered"
+    fi
+
+    log_info "Kiosk lock installed (Ctrl+Shift+L to toggle)"
+}
+
 phase2_fix_permissions() {
     log_step "Fixing permissions..."
 
@@ -1555,6 +1778,8 @@ phase2_fix_permissions() {
         "/opt/chrome-direct/keep-active.sh"
         "/opt/chrome-direct/inject-unpacked.py"
         "/usr/bin/lxc-start"
+        "/usr/local/bin/kiosk-lock"
+        "/usr/local/bin/kiosk-vt-ctl"
         "$INSTALL_DIR/setup.sh"
     )
 
@@ -1589,6 +1814,7 @@ run_phase2() {
     phase2_install_steam
     phase2_install_waydroid
     phase2_setup_mac_changer
+    phase2_setup_kiosk_lock
     phase2_disable_kwallet
     phase2_system_update
     phase2_fix_permissions
@@ -1607,6 +1833,7 @@ run_phase2() {
     echo "  install-ssl-cert      - Add SSL certs"
     echo "  steam                 - Steam client"
     echo "  waydroid show-full-display - Launch Waydroid UI"
+    echo "  Ctrl+Shift+L          - Toggle kiosk lock"
     echo ""
     echo "Services:"
     echo "  systemctl start/stop tailscale-vpn"
