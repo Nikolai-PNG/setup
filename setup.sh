@@ -1630,15 +1630,24 @@ unlock() {
     # 1. Restore shortcuts first (so reconfigure happens)
     restore_shortcuts
 
-    # 2. Unfullscreen active window
+    # 2. Unload focus enforcement script first (stops re-forcing fullscreen)
+    qdbus org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1
+
+    # 3. Unfullscreen active window + restore all windows in Alt+Tab
     local tmpscript
     tmpscript=$(mktemp /tmp/kiosk_unfs_XXXXX.js)
-    echo 'if (workspace.activeClient) workspace.activeClient.fullScreen = false;' > "$tmpscript"
+    cat > "$tmpscript" << 'UNFSEOF'
+(function() {
+    if (workspace.activeClient) workspace.activeClient.fullScreen = false;
+    var clients = workspace.clientList();
+    for (var i = 0; i < clients.length; i++) {
+        clients[i].skipSwitcher = false;
+        clients[i].skipTaskbar = false;
+    }
+})();
+UNFSEOF
     run_kwin_script "$tmpscript" "kiosk_unfs"
     rm -f "$tmpscript"
-
-    # 3. Unload focus enforcement script
-    qdbus org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1
 
     # 4. Show panels
     qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
@@ -1669,9 +1678,34 @@ LOCKEOF
 
     target.fullScreen = true;
 
+    // Hide ALL other windows from Alt+Tab so they can't be seen
+    var clients = workspace.clientList();
+    for (var i = 0; i < clients.length; i++) {
+        if (clients[i] !== target) {
+            clients[i].skipSwitcher = true;
+            clients[i].skipTaskbar = true;
+        }
+    }
+
+    // Re-force fullscreen if user clicks Chrome's "exit fullscreen" X
+    target.fullScreenChanged.connect(function() {
+        if (target && !target.fullScreen) {
+            target.fullScreen = true;
+        }
+    });
+
+    // Enforce focus - immediately switch back if anything else activates
     function onActivated(client) {
         if (target && client !== target) {
             workspace.activeClient = target;
+        }
+    }
+
+    // Hide any newly opened windows from switcher too
+    function onClientAdded(client) {
+        if (client !== target) {
+            client.skipSwitcher = true;
+            client.skipTaskbar = true;
         }
     }
 
@@ -1680,11 +1714,13 @@ LOCKEOF
             target = null;
             workspace.clientActivated.disconnect(onActivated);
             workspace.clientRemoved.disconnect(onRemoved);
+            workspace.clientAdded.disconnect(onClientAdded);
         }
     }
 
     workspace.clientActivated.connect(onActivated);
     workspace.clientRemoved.connect(onRemoved);
+    workspace.clientAdded.connect(onClientAdded);
 })();
 JSEOF
 
