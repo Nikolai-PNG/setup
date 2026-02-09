@@ -1,0 +1,322 @@
+{
+   "calculator": {
+      "description": "Texto para el título de la pestaña de la calculadora",
+      "message": "Calculadora"
+   },
+   "close": {
+      "description": "Texto para botones que dicen cerrar",
+      "message": "Cerrar"
+   },
+   "close_browser": {
+      "description": "Text for button to close browser",
+      "message": "Cerrar el navegador"
+   },
+   "close_tabs_footer": {
+      "description": "Mensaje de pie de página para closetabserror.html",
+      "message": "Cierra todas las pestañas y aplicaciones, y luego continúa con tu examen."
+   },
+   "close_tabs_header": {
+      "description": "Encabezado para closetabserror.html",
+      "message": "Cierra pestañas, ventanas y aplicaciones adicionales"
+   },
+   "close_tabs_message": {
+      "description": "Mensaje para closetabserror.html",
+      "message": "LockDown Browser no puede ejecutarse cuando \u003Cstrong>hay otras pestañas, ventanas o aplicaciones abiertas\u003C/strong>. Debes cerrar todo excepto la pestaña del examen (incluyendo esta pestaña). \u003Cbr>\u003Cbr>Después de cerrar los siguientes elementos, vuelve a intentar tu examen:"
+   },
+   "continue": {
+      "description": "Texto de continuación para botones",
+      "message": "Continuar"
+   },
+   "continue_to_exit": {
+      "description": "Instrucciones para presionar el botón de continuar para salir",
+      "message": "Presiona el botón de continuar para salir"
+   },
+   "cookie_notification": {
+      "description": "Texto que aparece en la notificación",
+      "message": "Las cookies han sido eliminadas."
+   },
+   "ctrl_alt_shift_warning": {
+      "description": "Mensaje que se muestra cada vez que se presiona Ctrl + Shift o Alt",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Advertencia:\u003C/b> \u003C/span>No está permitido usar CTRL + SHIFT o ALT durante el examen. Presiona ESC para volver al examen."
+   },
+   "dev_tool_exit": {
+      "description": "Message that appears after the user has opened Chrome Developer Tools",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Alerta:\u003C/b> \u003C/span>Las herramientas de desarrollador no están permitidas. El examen se cerrará ahora."
+   },
+   "dev_tool_exit_standard": {
+      "description": "Message that appears after the user has opened Chrome Developer Tools",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Alerta:\u003C/b> \u003C/span>Las herramientas de desarrollador no están permitidas. El examen se cerrará ahora y se notificará a su instructor."
+   },
+   "dismiss": {
+      "description": "Texto para cancelar la solicitud de contraseña",
+      "message": "Descartar"
+   },
+   "enter": {
+      "description": "Texto para ingresar la contraseña",
+      "message": "Ingresar"
+   },
+   "exam_end": {
+      "description": "Mensaje que se muestra en examend.html",
+      "message": "Seleccione el botón Continuar para cerrar LockDown Browser"
+   },
+   "exam_link": {
+      "description": "Se utiliza como título de pestaña para enlaces externos",
+      "message": "Enlace del examen"
+   },
+   "exam_startup_error": {
+      "description": "Error que aparece al encender un dispositivo durante un examen",
+      "message": "Tu Chromebook se apagó mientras LockDown Browser aún estaba en ejecución. El estado de bloqueo ahora ha sido desactivado."
+   },
+   "examearly_providereason": {
+      "description": "Early exit screen - message to provide a reason to close",
+      "message": "Proporciona la razón por la cual estás cerrando el navegador antes de que el examen esté completo (obligatorio)"
+   },
+   "exit_confirm": {
+      "description": "Mensaje de confirmación si el usuario quiere salir",
+      "message": "¿Estás seguro de que quieres salir?"
+   },
+   "exit_password": {
+      "description": "Message asking user to enter a password to exit",
+      "message": "Para salir de Respondus LockDown Browser, introduzca la contraseña de salida y seleccione Continuar."
+   },
+   "extension_not_permitted": {
+      "description": "Encabezado cuando el perfil indica que la extensión no está permitida",
+      "message": "Extensión de Chromebook no permitida"
+   },
+   "extension_not_permitted_info": {
+      "description": "Mensaje cuando el perfil indica que la extensión no está permitida",
+      "message": "Su administrador no ha habilitado este examen para la extensión de Chromebook. Por favor, contacte con su administrador o utilice otra versión de LockDown Browser para realizar este examen."
+   },
+   "extension_removed_exit": {
+      "description": "Mensaje que aparece después de que el usuario ha eliminado la extensión de Chrome durante el examen",
+      "message": "La extensión de LockDown Browser para Chrome fue eliminada."
+   },
+   "extra_displays_header": {
+      "description": "Encabezado para multipledisplayserror.html",
+      "message": "Cierra pantallas adicionales"
+   },
+   "extra_displays_message": {
+      "description": "Mensaje para mostrar al usuario en multipledisplayserror.html",
+      "message": "LockDown Browser no puede ejecutarse si hay \u003Cstrong>más de una pantalla conectada\u003C/strong>. Por favor, quita las pantallas adicionales antes de continuar."
+   },
+   "focus_lost_exit": {
+      "description": "Mensaje que aparece después de que se pierde el enfoque de la ventana del examen y antes de que ocurra una salida anticipada",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Alerta:\u003C/b> \u003C/span>Se intentó salir del LockDown Browser. El examen se cerrará ahora."
+   },
+   "focus_lost_exit_standard": {
+      "description": "Mensaje que aparece después de que se pierde el foco de la ventana del examen y antes de un cierre anticipado",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Alerta:\u003C/b> \u003C/span>Se intentó cambiar de LockDown Browser. El examen se cerrará y su instructor será notificado."
+   },
+   "focus_lost_warning": {
+      "description": "Advertencia que aparece cuando se pierde el enfoque de la ventana del examen",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Advertencia:\u003C/b> \u003C/span>No se permite cambiar de LockDown Browser. Presiona ESC para volver al examen."
+   },
+   "focus_lost_warning_standard": {
+      "description": "Advertencia que aparece cuando se pierde el foco de la ventana del examen",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Advertencia:\u003C/b> \u003C/span>No cierre el navegador hasta que el examen esté completo. Su instructor será notificado si sale del examen antes de tiempo. Presione ESC para volver al examen."
+   },
+   "incorrect_password": {
+      "description": "Mensaje que se muestra cuando la contraseña de salida temprana es incorrecta",
+      "message": "Contraseña incorrecta - selecciona X para volver a intentarlo"
+   },
+   "insert_symbol": {
+      "description": "Título de texto para la pestaña Símbolo",
+      "message": "Insertar símbolo"
+   },
+   "install_text": {
+      "description": "Texto que aparece al instalar LockDown Browser",
+      "message": "La extensión Lockdown Browser for Chromebook se ha instalado.\u003Cbr>Localiza la prueba en tu sistema de aprendizaje o evaluación para continuar"
+   },
+   "install_warning_bottom": {
+      "description": "Texto que aparece al instalar LockDown Browser",
+      "message": "Si estás utilizando Mac, Windows o iPad, contacta a tu instructor para obtener los detalles de descarga de la versión apropiada de LockDown Browser."
+   },
+   "install_warning_top": {
+      "description": "Advertencia que aparece al instalar LockDown Browser",
+      "message": "La extensión Lockdown Browser for Chromebook se ha instalado.\u003Cbr>Localiza la prueba en tu sistema de aprendizaje o evaluación para continuar"
+   },
+   "invalid_profile": {
+      "description": "Encabezado que se muestra cuando no se encuentra un perfil",
+      "message": "Perfil no válido"
+   },
+   "invalid_profile_info": {
+      "description": "Mensaje que se muestra cuando no se encuentra un perfil",
+      "message": "Hay un problema con la URL de este examen. Consulta \u003Ca href='https://support.respondus.com/hc/en-us/articles/4416216293659-Chromebook-There-is-a-problem-with-the-URL-for-this-exam'>este artículo\u003C/a> para obtener más información"
+   },
+   "link_blocked": {
+      "description": "Error que aparece al hacer clic en un enlace en la pestaña secundaria",
+      "message": "EL ENLACE ESTÁ BLOQUEADO"
+   },
+   "loading": {
+      "description": "Texto de carga",
+      "message": "Cargando..."
+   },
+   "loading_bar": {
+      "description": "Message to display on loading bar to indicate the video is uploading",
+      "message": "\u003Cb>No cierre LockDown Browser\u003C/b> ni apague su computadora hasta que esto se complete."
+   },
+   "no": {
+      "description": "Texto para botones que dicen no",
+      "message": "No"
+   },
+   "password": {
+      "description": "Text for password label",
+      "message": "Contraseña"
+   },
+   "password_enter": {
+      "description": "Text to tell user to enter password",
+      "message": "Ingrese la contraseña del examen."
+   },
+   "password_error": {
+      "description": "Message when the password is incorrect",
+      "message": "Contraseña incorrecta, inténtelo de nuevo"
+   },
+   "please_wait": {
+      "description": "Message to display on loading bar to indicate the video is uploading",
+      "message": "¡Espere, por favor!"
+   },
+   "popup_cancel": {
+      "description": "Texto para el botón de cancelar",
+      "message": "Cancelar"
+   },
+   "popup_clear_button": {
+      "description": "Texto para el botón de borrar cookies",
+      "message": "Borrar Cookies"
+   },
+   "popup_cookies": {
+      "description": "Información sobre cookies",
+      "message": "El soporte puede indicarte que borres todas las cookies de este sitio web para resolver un problema. Esa opción está disponible a continuación."
+   },
+   "popup_directions": {
+      "description": "Instrucciones para tomar el examen",
+      "message": "Para usar LockDown Browser, navega hacia la prueba en tu sistema de aprendizaje o evaluación y selecciona el examen. LockDown Browser se iniciará automáticamente."
+   },
+   "popup_email_label": {
+      "description": "Etiqueta para la entrada de Correo electrónico",
+      "message": "Correo electrónico (¡nunca te enviaremos spam!)"
+   },
+   "popup_email_placeholder": {
+      "description": "Marcador de posición para el campo de correo electrónico",
+      "message": "Ingresar Correo Electrónico"
+   },
+   "popup_name_label": {
+      "description": "Etiqueta para la entrada de Nombre",
+      "message": "Nombre"
+   },
+   "popup_name_placeholder": {
+      "description": "Marcador de posición para el campo de nombre",
+      "message": "Ingresar Nombre"
+   },
+   "popup_not_chromebook": {
+      "description": "Texto que aparece cuando el usuario no está utilizando un Chromebook",
+      "message": "Para usar LockDown Browser, debes estar en un dispositivo Chromebook."
+   },
+   "popup_ok_button": {
+      "description": "Texto para el botón de Aceptar",
+      "message": "Aceptar"
+   },
+   "popup_reemail_label": {
+      "description": "Etiqueta para volver a ingresar el Correo Electrónico",
+      "message": ">Volver a Ingresar Correo Electrónico"
+   },
+   "popup_reemail_placeholder": {
+      "description": "Marcador de posición para volver a ingresar el campo de correo electrónico",
+      "message": ">Volver a ingresar correo electrónico"
+   },
+   "popup_reportanissue_agree": {
+      "description": "Términos para informar un problema",
+      "message": "Entiendo y acepto que los detalles de esta y las sesiones anteriores de LockDown Browser se transmitirán a Respondus, Inc. \u003Cahref='https://web.respondus.com/tou-helpcenter/'>Más detalles\u003C/a>"
+   },
+   "popup_reportanissue_description": {
+      "description": "",
+      "message": "Describe tu problema con la mayor cantidad de detalles posible, incluyendo los pasos que has tomado para resolverlo. (Entendemos que puedas estar frustrado, pero por favor, sé amable.)"
+   },
+   "popup_reportanissue_header": {
+      "description": "Encabezado para la página de informar un problema",
+      "message": "Informar un problema con LockDown Browser a Respondus"
+   },
+   "popup_reportanissue_optional": {
+      "description": "Título de información opcional",
+      "message": "Información Opcional"
+   },
+   "popup_reportissue_link": {
+      "description": "Texto para el enlace de informar un problema",
+      "message": "Informe un Problema"
+   },
+   "popup_send": {
+      "description": "Texto para el botón de enviar",
+      "message": "Enviar"
+   },
+   "popup_submission_option1": {
+      "description": "Opción 1 para opción después del envío",
+      "message": "- Si tienes un plazo ajustado y no puedes resolver el problema, intenta usar LockDown Browser en otra computadora o dispositivo."
+   },
+   "popup_submission_option2": {
+      "description": "Opción 2 para opción después del envío",
+      "message": "- Ponte en contacto con el servicio de asistencia de tu institución y proporciona el resumen del \"Informe un problema\" que se te envió por correo electrónico."
+   },
+   "popup_submission_option3": {
+      "description": "Opción 3 para opción después del envío",
+      "message": "- Visita la \u003Ca href='https://respondus.knowledgeowl.com/home'>Base de conocimientos de LockDown Browser\u003C/a> donde encontrarás respuestas a problemas y preguntas comunes."
+   },
+   "popup_submission_option4": {
+      "description": "Opción 4 para opción después del envío",
+      "message": "- Abre un \u003Ca href='https://support.respondus.com/'>ticket\u003C/a> de soporte con Respondus. Asegúrate de incluir tu resumen del \"Informe un problema\" en el ticket de soporte."
+   },
+   "popup_submission_options": {
+      "description": "Encabezado para opciones después del envío",
+      "message": "\u003Cspan id='report-desc-bold'>Generalmente no respondemos a las presentaciones de \"Informe un problema\"\u003C/span> pero hay varias opciones disponibles para ti:"
+   },
+   "popup_system_check": {
+      "description": "Información relativa a las comprobaciones del sistema",
+      "message": "El soporte puede indicarle que realice una comprobación del sistema. Esa opción está disponible a continuación."
+   },
+   "popup_system_check_button": {
+      "description": "Texto para el botón de comprobar el sistema",
+      "message": "Comprobar sistema"
+   },
+   "popup_thank_message": {
+      "description": "Mensaje de agradecimiento por informar un problema",
+      "message": "Gracias por informar este problema a Respondus. La información proporcionada nos ayudará a mejorar LockDown Browser. Si proporcionaste una dirección de correo electrónico, recibirás un resumen del informe de problema. Esta información será extremadamente útil para alguien que esté solucionando un problema."
+   },
+   "popup_thank_you": {
+      "description": "Texto de agradecimiento por informar un problema",
+      "message": "Gracias "
+   },
+   "popup_title": {
+      "description": "Título para la ventana emergente",
+      "message": "LockDown Browser para Chromebook"
+   },
+   "proctor_password": {
+      "description": "Texto para la contraseña del supervisor al intentar salir temprano",
+      "message": "Contraseña del supervisor:"
+   },
+   "return_to_exam": {
+      "description": "Text for button to return to exam when prompted to close browser",
+      "message": "Volver al examen"
+   },
+   "save_close_browser": {
+      "description": "Text for button to save early exit reason and close browser",
+      "message": "Guardar motivo y cerrar el navegador"
+   },
+   "screenshot_exit": {
+      "description": "Mensaje que aparece después de detectar una captura de pantalla y antes de salir temprano",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Alerta:\u003C/b> \u003C/span>Hubo un intento de tomar capturas de pantalla dentro de LockDown Browser. El examen se cerrará ahora."
+   },
+   "screenshot_warning": {
+      "description": "Advertencia que aparece cuando se detecta una captura de pantalla",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Advertencia:\u003C/b> \u003C/span>No se permite tomar capturas de pantalla dentro de LockDown Browser. Hacerlo nuevamente resultará en el cierre del examen. Presiona ESC para volver al examen."
+   },
+   "secondary_display_exit": {
+      "description": "Mensaje que aparece después de que el usuario ha conectado una pantalla secundaria",
+      "message": "\u003Cspan style='color:#AE0015; font-family:verdana'>\u003Cb>Advertencia:\u003C/b> \u003C/span>Hubo un intento de agregar una pantalla adicional. El examen se cerrará ahora."
+   },
+   "show_fewer": {
+      "description": "Texto para el enlace de mostrar menos pestañas abiertas",
+      "message": "- Mostrar Menos"
+   },
+   "yes": {
+      "description": "Texto para botones que dicen sí",
+      "message": "Sí"
+   }
+}

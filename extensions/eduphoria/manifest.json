@@ -1,0 +1,30 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "assets/images/icon.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "author": "SDK_EDUPHORIA_PROD",
+   "background": {
+      "service_worker": "background.js"
+   },
+   "content_scripts": [  ],
+   "default_locale": "en",
+   "description": "LockDown Browser is a custom browser that locks down the exam environment within specific learning and assessment systems",
+   "host_permissions": [ "http://*/*", "https://*/*", "\u003Call_urls>" ],
+   "icons": {
+      "128": "assets/images/icon.png"
+   },
+   "incognito": "not_allowed",
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjAepXc0HMp06M4lj7sqs+JuvESc+kvZlAZ0cme3q2s/VOj2i9H9qH7K4OF8RuirNN+3d7HXws5bnNMaF9YwiYGBrTZGV2+zfIDaP9CiiF8xqWEDukCcOXbmdiCTj14lyisf2NfeqDiKfdIYQR+VoiA93H+OJJQURlGmgmeCx5Z9vUiO3wIAOVGhWDCYV9hZRMZnkOM2qr4knlJ0MKxn18nesGEmMQDIE8yZLsnUnEfobP6/IZ8er++69VcaxaW0/jd6gVJjjsm1usES02vstBVSligYXAPJtIABgqxZrJmEbbxN6yQqNWnvLSEKW71lFbKofH/w37k1Ma1QrthXY5QIDAQAB",
+   "manifest_version": 3,
+   "name": "Eduphoria LockDown Browser",
+   "permissions": [ "system.display", "history", "cookies", "storage", "webNavigation", "webRequest", "tabs", "activeTab", "scripting", "management", "contentSettings", "browsingData", "declarativeNetRequestWithHostAccess", "clipboardRead", "clipboardWrite", "wallpaper" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "0.4.60",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "background.js", "manifest.json", "viewer.html", "viewer.js", "toolbar.js", "security.js", "security.html", "calculator.js", "create-calculator.js", "calculator.html", "end-exam.js", "end-exam.html", "focus-lost.html", "monitor.html", "monitor.js", "loading-bar.html", "loading-bar.js", "early-exit.html", "early-exit.js", "essay-block.js", "symbol-sheet.html", "symbol-sheet.js", "create-symbol-sheet.js", "_locales/de/messages.json", "_locales/en/messages.json", "_locales/es/messages.json", "_locales/fr/messages.json", "_locales/it/messages.json", "_locales/pt/messages.json", "/assets/images/close-tab.png", "/assets/images/calculator-light.png", "/assets/images/x-square.png", "/assets/images/recording-icon.png", "/assets/images/symbol-icon.png" ]
+   } ]
+}

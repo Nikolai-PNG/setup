@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      width: 220px;
+      padding: 12px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      margin: 0;
+    }
+    h3 {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      color: #1f2937;
+    }
+    .status {
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-weight: 500;
+    }
+    .status.on {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .status.off {
+      background: #f3f4f6;
+      color: #6b7280;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn-enable {
+      background: #f59e0b;
+      color: white;
+    }
+    .btn-enable:hover {
+      background: #d97706;
+    }
+    .btn-disable {
+      background: #6b7280;
+      color: white;
+    }
+    .btn-disable:hover {
+      background: #4b5563;
+    }
+    .btn-reload {
+      background: #3b82f6;
+      color: white;
+    }
+    .btn-reload:hover {
+      background: #2563eb;
+    }
+    .info {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h3>Highlighter</h3>
+
+  <div id="status" class="status off">Checking...</div>
+
+  <button id="toggleBtn" class="btn-enable">Enable</button>
+  <button id="reloadBtn" class="btn-reload" style="display:none;">Reload Page</button>
+
+  <div class="info">
+    Auto-highlights on supported pages
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
