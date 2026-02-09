@@ -1182,29 +1182,47 @@ phase2_install_waydroid() {
     fi
 
     # --- 2. Add Waydroid apt repo ---
+    local codename
+    codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+    # Fallback to bookworm if codename not detected or not in waydroid repo
+    case "$codename" in
+        bookworm|trixie|bullseye|sid|focal|jammy|noble) ;;
+        *) codename="bookworm" ;;
+    esac
+
     if [[ ! -f /usr/share/keyrings/waydroid.gpg ]]; then
         curl -fsSL "https://repo.waydro.id/waydroid.gpg" -o /usr/share/keyrings/waydroid.gpg
     fi
-    echo "deb [signed-by=/usr/share/keyrings/waydroid.gpg] https://repo.waydro.id/ bookworm main" \
+    echo "deb [signed-by=/usr/share/keyrings/waydroid.gpg] https://repo.waydro.id/ $codename main" \
         > /etc/apt/sources.list.d/waydroid.list
     apt update
+    log_info "Waydroid repo added for: $codename"
 
-    # --- 3. Install Waydroid ---
-    apt install -y waydroid
+    # --- 3. Install Waydroid and dependencies ---
+    apt install -y waydroid python3 lxc
     log_info "Waydroid package installed"
 
-    # --- 4. ChromeOS LSM sb_mount bypass (LD_PRELOAD mount fix) ---
-    # ChromeOS kernel's LSM blocks mount() when the path traverses symlinks.
-    # LXC's safe_mount() uses /proc/self/fd/<N> paths which are symlinks,
-    # triggering "Mount path with symlinks prohibited". This LD_PRELOAD library
-    # intercepts mount() and resolves /proc/self/fd/ paths via readlink() first.
-    log_info "Compiling ChromeOS LSM mount fix..."
+    # --- 4-7. ChromeOS/Shimboot kernel workarounds ---
+    # Detect if running on a ChromeOS kernel (shimboot)
+    local is_chromeos_kernel=false
+    if uname -r | grep -qi "chrome\|cros" || [[ -f /usr/share/vboot/bin/crossystem ]] || dmesg 2>/dev/null | grep -qi "Chromium OS LSM"; then
+        is_chromeos_kernel=true
+        log_info "ChromeOS kernel detected - applying shimboot workarounds"
+    fi
 
-    # Ensure build tools are available
-    apt install -y gcc 2>/dev/null || true
+    if [[ "$is_chromeos_kernel" == "true" ]]; then
+        # --- 4. ChromeOS LSM sb_mount bypass (LD_PRELOAD mount fix) ---
+        # ChromeOS kernel's LSM blocks mount() when the path traverses symlinks.
+        # LXC's safe_mount() uses /proc/self/fd/<N> paths which are symlinks,
+        # triggering "Mount path with symlinks prohibited". This LD_PRELOAD library
+        # intercepts mount() and resolves /proc/self/fd/ paths via readlink() first.
+        log_info "Compiling ChromeOS LSM mount fix..."
 
-    local mount_fix_src=$(mktemp /tmp/mount_fix_XXXXXX.c)
-    cat > "$mount_fix_src" << 'CEOF'
+        # Ensure build tools are available
+        apt install -y gcc 2>/dev/null || true
+
+        local mount_fix_src=$(mktemp /tmp/mount_fix_XXXXXX.c)
+        cat > "$mount_fix_src" << 'CEOF'
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <string.h>
@@ -1245,42 +1263,41 @@ int mount(const char *source, const char *target,
     return real_mount(use_source, use_target, filesystemtype, mountflags, data);
 }
 CEOF
-    gcc -shared -fPIC -o /usr/lib/waydroid-mount-fix.so "$mount_fix_src" -ldl
-    rm -f "$mount_fix_src"
-    log_info "waydroid-mount-fix.so compiled and installed"
+        gcc -shared -fPIC -o /usr/lib/waydroid-mount-fix.so "$mount_fix_src" -ldl
+        rm -f "$mount_fix_src"
+        log_info "waydroid-mount-fix.so compiled and installed"
 
-    # --- 5. Wrap lxc-start to inject LD_PRELOAD ---
-    if [[ -f /usr/bin/lxc-start && ! -f /usr/bin/lxc-start.real ]]; then
-        mv /usr/bin/lxc-start /usr/bin/lxc-start.real
-    fi
-    cat > /usr/bin/lxc-start << 'WRAPEOF'
+        # --- 5. Wrap lxc-start to inject LD_PRELOAD ---
+        if [[ -f /usr/bin/lxc-start && ! -f /usr/bin/lxc-start.real ]]; then
+            mv /usr/bin/lxc-start /usr/bin/lxc-start.real
+        fi
+        cat > /usr/bin/lxc-start << 'WRAPEOF'
 #!/bin/bash
 # Wrapper to fix ChromeOS LSM sb_mount symlink restriction for LXC containers
 # Resolves /proc/self/fd/N to actual paths to avoid symlink traversal
 export LD_PRELOAD=/usr/lib/waydroid-mount-fix.so${LD_PRELOAD:+:$LD_PRELOAD}
 exec /usr/bin/lxc-start.real "$@"
 WRAPEOF
-    chmod +x /usr/bin/lxc-start
-    log_info "lxc-start wrapper installed"
+        chmod +x /usr/bin/lxc-start
+        log_info "lxc-start wrapper installed"
 
-    # --- 6. Patch waydroid-net.sh: CHECKSUM iptables target (missing in ChromeOS kernel) ---
-    local net_script="/usr/lib/waydroid/data/scripts/waydroid-net.sh"
-    if [[ -f "$net_script" ]]; then
-        # Make CHECKSUM rules non-fatal (ChromeOS kernel lacks the target)
-        # start_iptables function
-        sed -i 's|-j CHECKSUM --checksum-fill$|-j CHECKSUM --checksum-fill 2>/dev/null || true|' "$net_script"
-        # Already patched lines (idempotent - won't double-patch because of the $ anchor)
-        log_info "waydroid-net.sh CHECKSUM rules patched"
-    fi
+        # --- 6. Patch waydroid-net.sh: CHECKSUM iptables target (missing in ChromeOS kernel) ---
+        local net_script="/usr/lib/waydroid/data/scripts/waydroid-net.sh"
+        if [[ -f "$net_script" ]]; then
+            sed -i 's|-j CHECKSUM --checksum-fill$|-j CHECKSUM --checksum-fill 2>/dev/null || true|' "$net_script"
+            log_info "waydroid-net.sh CHECKSUM rules patched"
+        fi
 
-    # --- 7. Patch seccomp: userfaultfd errno 38 ---
-    # Android 13 ART tries userfaultfd() with flags not supported by kernel 5.4.
-    # Returns EINVAL instead of ENOSYS/EACCES, causing a fatal CHECK failure.
-    # Adding "userfaultfd errno 38" makes it return ENOSYS so ART falls back.
-    local seccomp_file="/usr/lib/waydroid/data/configs/waydroid.seccomp"
-    if [[ -f "$seccomp_file" ]] && ! grep -q "^userfaultfd errno 38$" "$seccomp_file"; then
-        echo "userfaultfd errno 38" >> "$seccomp_file"
-        log_info "userfaultfd errno 38 added to seccomp profile"
+        # --- 7. Patch seccomp: userfaultfd errno 38 ---
+        # Android 13 ART tries userfaultfd() with flags not supported by kernel 5.4.
+        # Returns EINVAL instead of ENOSYS/EACCES, causing a fatal CHECK failure.
+        local seccomp_file="/usr/lib/waydroid/data/configs/waydroid.seccomp"
+        if [[ -f "$seccomp_file" ]] && ! grep -q "^userfaultfd errno 38$" "$seccomp_file"; then
+            echo "userfaultfd errno 38" >> "$seccomp_file"
+            log_info "userfaultfd errno 38 added to seccomp profile"
+        fi
+    else
+        log_info "Standard kernel detected - no shimboot workarounds needed"
     fi
 
     # --- 8. Initialize Waydroid with GAPPS ---
@@ -1288,31 +1305,38 @@ WRAPEOF
     waydroid init -s GAPPS -f
 
     # --- 9. Add persistent properties ---
-    # Disable userfaultfd GC (kernel 5.4 doesn't support it)
     # Suppress ANR "not responding" dialogs (games trigger these frequently)
     # Disable strict mode (reduces crashes/dialogs in games)
     local base_prop="/var/lib/waydroid/waydroid_base.prop"
     local waydroid_cfg="/var/lib/waydroid/waydroid.cfg"
 
+    # Build property list (uffd_gc only needed on ChromeOS/old kernels)
+    local props=(
+        "persist.sys.anr_timeout=60000"
+        "persist.sys.anr_show_dialog=0"
+        "persist.sys.strictmode.disable=true"
+    )
+    if [[ "$is_chromeos_kernel" == "true" ]]; then
+        props+=("persist.device_config.runtime_native_boot.enable_uffd_gc=false")
+    fi
+
     # Add to base props (direct runtime properties)
-    for prop in \
-        "persist.device_config.runtime_native_boot.enable_uffd_gc=false" \
-        "persist.sys.anr_timeout=60000" \
-        "persist.sys.anr_show_dialog=0" \
-        "persist.sys.strictmode.disable=true"; do
+    for prop in "${props[@]}"; do
         prop_key="${prop%%=*}"
         if ! grep -q "^${prop_key}=" "$base_prop" 2>/dev/null; then
             echo "$prop" >> "$base_prop"
         fi
     done
-    log_info "Waydroid properties configured (uffd_gc off, ANR suppressed)"
+    log_info "Waydroid properties configured (ANR suppressed)"
 
-    # Add to waydroid.cfg [properties] section (survives waydroid init)
-    if ! grep -q "enable_uffd_gc" "$waydroid_cfg" 2>/dev/null; then
-        if grep -q '^\[properties\]' "$waydroid_cfg"; then
-            sed -i '/^\[properties\]/a persist.device_config.runtime_native_boot.enable_uffd_gc = false' "$waydroid_cfg"
-        else
-            printf '\n[properties]\npersist.device_config.runtime_native_boot.enable_uffd_gc = false\n' >> "$waydroid_cfg"
+    # Add uffd_gc to waydroid.cfg [properties] section (survives waydroid init)
+    if [[ "$is_chromeos_kernel" == "true" ]]; then
+        if ! grep -q "enable_uffd_gc" "$waydroid_cfg" 2>/dev/null; then
+            if grep -q '^\[properties\]' "$waydroid_cfg"; then
+                sed -i '/^\[properties\]/a persist.device_config.runtime_native_boot.enable_uffd_gc = false' "$waydroid_cfg"
+            else
+                printf '\n[properties]\npersist.device_config.runtime_native_boot.enable_uffd_gc = false\n' >> "$waydroid_cfg"
+            fi
         fi
     fi
 
@@ -1522,8 +1546,22 @@ main() {
             log_info "Reset complete. Run setup.sh again."
             exit 0
             ;;
+        --restart)
+            if [[ ! -f "$STATUS_FILE" ]]; then
+                log_error "No status file found. Nothing to restart."
+                exit 1
+            fi
+            # Keep only phase1 steps, wipe all phase2 progress
+            grep -v '^phase2\|^delete_old_user\|^remove_bloat\|^install_deps\|^install_brave\|^install_vscode\|^install_chrome\|^install_tailscale\|^setup_vpn\|^setup_chrome_netns\|^setup_chrome_extensions\|^setup_chrome_certs\|^install_moonlight\|^install_steam\|^install_waydroid\|^setup_mac_changer\|^disable_kwallet\|^system_update\|^fix_permissions' "$STATUS_FILE" > "${STATUS_FILE}.tmp" 2>/dev/null || true
+            mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+            log_info "Phase 2 progress cleared. Run 'sudo shimboot-setup' to re-run phase 2."
+            exit 0
+            ;;
         --help)
-            echo "Usage: $0 [--status|--reset|--help]"
+            echo "Usage: $0 [--status|--reset|--restart|--help]"
+            echo "  --status   Show completed steps"
+            echo "  --restart  Clear phase 2 progress, re-run from beginning of phase 2"
+            echo "  --reset    Full reset (deletes all setup data)"
             exit 0
             ;;
     esac
