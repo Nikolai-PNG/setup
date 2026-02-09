@@ -496,18 +496,14 @@ ip rule add iif "\$VETH_HOST" lookup main priority 5199
 \$IPT -A FORWARD -i "\$VETH_HOST" -o "\$PHYS_IF" -j ACCEPT
 \$IPT -A FORWARD -i "\$PHYS_IF" -o "\$VETH_HOST" -m state --state RELATED,ESTABLISHED -j ACCEPT
 
-# Waydroid bridge: keep 192.168.240.0/24 in main table so Tailscale
-# doesn't hijack the local bridge traffic via table 52
+# Waydroid bridge: only keep TO rule so return packets reach the bridge.
+# Outbound waydroid traffic falls through to Tailscale's table 52 (VPN).
 WD_SUBNET="192.168.240"
 ip rule del to "\${WD_SUBNET}.0/24" lookup main priority 5200 2>/dev/null || true
-ip rule del from "\${WD_SUBNET}.0/24" lookup main priority 5200 2>/dev/null || true
-ip rule del iif waydroid0 lookup main priority 5199 2>/dev/null || true
 ip rule add to "\${WD_SUBNET}.0/24" lookup main priority 5200
-ip rule add from "\${WD_SUBNET}.0/24" lookup main priority 5200
-ip rule add iif waydroid0 lookup main priority 5199 2>/dev/null || true
 
 echo "Chrome namespace ready: \${NS_SUBNET}.2 via \$PHYS_IF"
-echo "Waydroid bridge rules added: \${WD_SUBNET}.0/24 kept in main table"
+echo "Waydroid bridge rule added: TO \${WD_SUBNET}.0/24 via main table"
 SETUPEOF
     chmod +x /usr/local/bin/chrome-netns-setup.sh
 
