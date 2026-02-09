@@ -1347,11 +1347,22 @@ WRAPEOF
         fi
     fi
 
-    # --- 10. Enable and start Waydroid ---
+    # --- 10. Tailscale routing fix ---
+    # Tailscale's policy routing (table 52) captures waydroid's bridge subnet
+    # and tries to route it through tailscale0, breaking return packets to the
+    # container. Add a rule to keep packets TO waydroid in the main table.
+    # Outbound waydroid traffic still goes through Tailscale VPN (table 52).
+    if command -v tailscale &>/dev/null; then
+        ip rule del to 192.168.240.0/24 lookup main priority 5200 2>/dev/null || true
+        ip rule add to 192.168.240.0/24 lookup main priority 5200
+        log_info "Tailscale routing fix applied (waydroid bridge reachable)"
+    fi
+
+    # --- 11. Enable and start Waydroid ---
     systemctl enable waydroid-container
     systemctl start waydroid-container 2>/dev/null || log_warn "Container start may need reboot"
 
-    # --- 11. Get Android ID for Play Store registration ---
+    # --- 12. Get Android ID for Play Store registration ---
     sleep 5
     local android_id=""
     android_id=$(sudo waydroid shell -- sqlite3 /data/data/com.google.android.gsf/databases/gservices.db \
