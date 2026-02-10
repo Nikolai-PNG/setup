@@ -486,10 +486,23 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-    # DNS config - network DNS first (for on-campus), public fallback (for off-campus)
+    # DNS config - school DNS first (always), then auto-detected, then public fallback
+    # School DNS is required for on-prem detection even when setup runs off-campus
     mkdir -p /etc/netns/chrome_ns
-    echo "$DNS" | tr ',' '\n' | sed 's/^/nameserver /' > /etc/netns/chrome_ns/resolv.conf
-    # Add public DNS fallback if not already present
+    : > /etc/netns/chrome_ns/resolv.conf
+    # 1. School DNS (from config) - always first for on-prem detection
+    if [[ -n "${SCHOOL_DNS:-}" ]]; then
+        echo "$SCHOOL_DNS" | tr ',' '\n' | while read -r ns; do
+            [[ -n "$ns" ]] && echo "nameserver $ns"
+        done >> /etc/netns/chrome_ns/resolv.conf
+    fi
+    # 2. Auto-detected DNS (current network) - useful if different from school
+    if [[ -n "$DNS" && "$DNS" != "1.1.1.1,8.8.8.8" ]]; then
+        echo "$DNS" | tr ',' '\n' | while read -r ns; do
+            [[ -n "$ns" ]] && ! grep -q "$ns" /etc/netns/chrome_ns/resolv.conf && echo "nameserver $ns"
+        done >> /etc/netns/chrome_ns/resolv.conf
+    fi
+    # 3. Public DNS fallback (off-campus / home network)
     grep -q "8.8.8.8" /etc/netns/chrome_ns/resolv.conf || echo "nameserver 8.8.8.8" >> /etc/netns/chrome_ns/resolv.conf
     grep -q "1.1.1.1" /etc/netns/chrome_ns/resolv.conf || echo "nameserver 1.1.1.1" >> /etc/netns/chrome_ns/resolv.conf
 
@@ -531,7 +544,7 @@ phase2_setup_chrome_certs() {
             rm -rf "$nssdb_dir"
             mkdir -p "$nssdb_dir"
             chown "$NEW_USERNAME:$NEW_USERNAME" "$nssdb_dir"
-            echo "" | sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -N 2>/dev/null || true
+            printf '\n\n' | sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -N 2>/dev/null || true
             log_info "NSS database created"
         fi
 
@@ -632,7 +645,7 @@ PYEOF
 #!/bin/bash
 [[ -z "$1" || ! -f "$1" ]] && { echo "Usage: $0 cert.pem [name]"; exit 1; }
 CERT="$1"; NAME="${2:-$(basename "$1" | sed 's/\.[^.]*$//')}"
-[[ ! -d "$HOME/.pki/nssdb" ]] && { mkdir -p "$HOME/.pki/nssdb"; echo "" | certutil -d sql:$HOME/.pki/nssdb -N; }
+[[ ! -d "$HOME/.pki/nssdb" ]] && { mkdir -p "$HOME/.pki/nssdb"; printf '\n\n' | certutil -d sql:$HOME/.pki/nssdb -N; }
 certutil -d sql:$HOME/.pki/nssdb -D -n "$NAME" 2>/dev/null || true
 certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "$NAME" -i "$CERT"
 echo "Installed: $NAME. Restart Chrome."
@@ -1346,7 +1359,24 @@ WRAPEOF
 
     # --- 8. Initialize Waydroid with GAPPS ---
     log_info "Initializing Waydroid with GAPPS image (this may take a while)..."
-    waydroid init -s GAPPS -f
+    local init_ok=false
+    for attempt in 1 2 3; do
+        if waydroid init -s GAPPS -f; then
+            # Verify init actually produced a valid config
+            if [[ -f /var/lib/waydroid/waydroid.cfg ]] && grep -q "images_path" /var/lib/waydroid/waydroid.cfg 2>/dev/null; then
+                init_ok=true
+                break
+            else
+                log_warn "waydroid init completed but config looks incomplete (attempt $attempt/3)"
+            fi
+        else
+            log_warn "waydroid init failed (attempt $attempt/3)"
+        fi
+        sleep 3
+    done
+    if [[ "$init_ok" != "true" ]]; then
+        log_error "Waydroid init failed after 3 attempts. Run manually: waydroid init -s GAPPS -f"
+    fi
 
     # --- 9. Add persistent properties ---
     # Suppress ANR "not responding" dialogs (games trigger these frequently)
@@ -1475,6 +1505,11 @@ EOF
 phase2_disable_kwallet() {
     log_step "Disabling KDE Wallet..."
 
+    if is_done "disable_kwallet"; then
+        log_info "Already done, skipping"
+        return
+    fi
+
     local user_home="/home/$NEW_USERNAME"
     rm -f "$user_home/.local/share/kwalletd/kdewallet.kwl" "$user_home/.local/share/kwalletd/kdewallet.salt" 2>/dev/null || true
 
@@ -1485,7 +1520,13 @@ First Use=false
 Enabled=false
 EOF
     chown "$NEW_USERNAME:$NEW_USERNAME" "$user_home/.config/kwalletrc"
+
+    # Kill running kwalletd5 so it picks up the new config on next start
+    # (kwalletd5 caches config in memory; just writing kwalletrc isn't enough)
+    pkill -u "$NEW_USERNAME" kwalletd5 2>/dev/null || true
+
     log_info "KDE Wallet disabled"
+    mark_done "disable_kwallet"
 }
 
 phase2_system_update() {
