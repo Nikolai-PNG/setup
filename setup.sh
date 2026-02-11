@@ -1641,7 +1641,7 @@ lock() {
 
     # 2. Hide panels (autohide so they don't show over fullscreen)
     qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
-        'panels().forEach(function(p) { p.hiding = "autohide"; })' >/dev/null 2>&1
+        'panels().forEach(function(p) { p.hiding = "windowscover"; })' >/dev/null 2>&1
 
     # 3. Disable all keyboard shortcuts except our unlock shortcut
     disable_shortcuts &
@@ -1817,10 +1817,68 @@ Uuid=$uuid
 HOTEOF
             chown "$NEW_USERNAME:$NEW_USERNAME" "$khotkeysrc"
             log_info "Registered Ctrl+Shift+L in khotkeysrc"
+        else
+            # khotkeysrc doesn't exist or has no DataCount — create minimal config
+            cat > "$khotkeysrc" << HOTEOF2
+[Data]
+DataCount=1
+
+[Data_1]
+Comment=Toggle Kiosk Lock (fullscreen + block escape)
+Enabled=true
+Name=Kiosk Lock
+Type=SIMPLE_ACTION_DATA
+
+[Data_1Actions]
+ActionsCount=1
+
+[Data_1Actions0]
+CommandURL=/usr/local/bin/kiosk-lock
+Type=COMMAND_URL
+
+[Data_1Conditions]
+Comment=
+ConditionsCount=0
+
+[Data_1Triggers]
+Comment=Simple_action
+TriggersCount=1
+
+[Data_1Triggers0]
+Key=Ctrl+Shift+L
+Type=SHORTCUT
+Uuid=$uuid
+HOTEOF2
+            chown "$NEW_USERNAME:$NEW_USERNAME" "$khotkeysrc"
+            log_info "Created khotkeysrc with Kiosk Lock shortcut"
         fi
     else
         log_info "Kiosk Lock shortcut already registered"
     fi
+
+    # 6. Register shortcut in kglobalshortcutsrc (required for KDE to activate it)
+    local kglobalrc="$user_home/.config/kglobalshortcutsrc"
+    if ! grep -q "$uuid" "$kglobalrc" 2>/dev/null; then
+        # Ensure [khotkeys] section exists with the binding
+        if grep -q '^\[khotkeys\]' "$kglobalrc" 2>/dev/null; then
+            # Add our shortcut entry after the [khotkeys] section header
+            sed -i "/^\[khotkeys\]/a ${uuid}=Ctrl+Shift+L,none,Kiosk Lock" "$kglobalrc"
+        else
+            # Create the section
+            cat >> "$kglobalrc" << KGEOF
+
+[khotkeys]
+_k_friendly_name=Custom Shortcuts Service
+${uuid}=Ctrl+Shift+L,none,Kiosk Lock
+KGEOF
+        fi
+        chown "$NEW_USERNAME:$NEW_USERNAME" "$kglobalrc"
+        log_info "Registered Ctrl+Shift+L in kglobalshortcutsrc"
+    fi
+
+    # 7. Reload khotkeys to pick up new config
+    sudo -u "$NEW_USERNAME" qdbus org.kde.kded5 /kded org.kde.kded5.loadModule khotkeys 2>/dev/null || true
+    sudo -u "$NEW_USERNAME" qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure 2>/dev/null || true
 
     log_info "Kiosk lock installed (Ctrl+Shift+L to toggle)"
 }
