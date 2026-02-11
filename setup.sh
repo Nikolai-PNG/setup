@@ -1581,6 +1581,9 @@ phase2_setup_kiosk_lock() {
 #        hides panels, blocks VT switching
 # Unlock: reverses everything
 
+# Prevent KDE from creating a taskbar entry for this script
+unset DESKTOP_STARTUP_ID
+
 LOCK_STATE="/tmp/kiosk-lock.state"
 BACKUP="/tmp/kiosk-lock-shortcuts.bak"
 SCRIPT_DIR="/usr/local/lib/kiosk-lock"
