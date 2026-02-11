@@ -1289,8 +1289,8 @@ phase2_install_waydroid() {
         # intercepts mount() and resolves /proc/self/fd/ paths via readlink() first.
         log_info "Compiling ChromeOS LSM mount fix..."
 
-        # Ensure build tools are available
-        apt install -y gcc 2>/dev/null || true
+        # Ensure build tools are available (need gcc + libc headers)
+        apt install -y build-essential || apt install -y gcc libc6-dev || true
 
         local mount_fix_src=$(mktemp /tmp/mount_fix_XXXXXX.c)
         cat > "$mount_fix_src" << 'CEOF'
@@ -1334,9 +1334,13 @@ int mount(const char *source, const char *target,
     return real_mount(use_source, use_target, filesystemtype, mountflags, data);
 }
 CEOF
-        gcc -shared -fPIC -o /usr/lib/waydroid-mount-fix.so "$mount_fix_src" -ldl
+        if gcc -shared -fPIC -o /usr/lib/waydroid-mount-fix.so "$mount_fix_src" -ldl; then
+            log_info "waydroid-mount-fix.so compiled and installed"
+        else
+            log_error "FAILED to compile waydroid-mount-fix.so (missing gcc or libc6-dev?)"
+            log_error "Waydroid will NOT work without this. Install build-essential and re-run."
+        fi
         rm -f "$mount_fix_src"
-        log_info "waydroid-mount-fix.so compiled and installed"
 
         # --- 5. Wrap lxc-start to inject LD_PRELOAD ---
         if [[ -f /usr/bin/lxc-start && ! -f /usr/bin/lxc-start.real ]]; then
@@ -1353,9 +1357,11 @@ WRAPEOF
         log_info "lxc-start wrapper installed"
 
         # --- 6. Patch waydroid-net.sh: CHECKSUM iptables target (missing in ChromeOS kernel) ---
+        # Kernel 5.4 lacks xt_CHECKSUM module — iptables fails with "No chain/target/match"
         local net_script="/usr/lib/waydroid/data/scripts/waydroid-net.sh"
         if [[ -f "$net_script" ]]; then
-            sed -i 's|-j CHECKSUM --checksum-fill\s*$|-j CHECKSUM --checksum-fill 2>/dev/null || true|' "$net_script"
+            # Find lines with -j CHECKSUM, skip already-patched, append error suppression
+            sed -i '/-j CHECKSUM/{/2>\/dev\/null/!s/$/ 2>\/dev\/null || true/;}' "$net_script"
             log_info "waydroid-net.sh CHECKSUM rules patched"
         fi
 
@@ -1821,8 +1827,11 @@ HOTEOF
             chown "$NEW_USERNAME:$NEW_USERNAME" "$khotkeysrc"
             log_info "Registered Ctrl+Shift+L in khotkeysrc"
         else
-            # khotkeysrc doesn't exist or has no DataCount — create minimal config
+            # khotkeysrc doesn't exist or has no DataCount — create full config
             cat > "$khotkeysrc" << HOTEOF2
+[\$Version]
+update_info=konsole_globalaccel.upd:konsole_globalaccel
+
 [Data]
 DataCount=1
 
@@ -1851,6 +1860,23 @@ TriggersCount=1
 Key=Ctrl+Shift+L
 Type=SHORTCUT
 Uuid=$uuid
+
+[Gestures]
+Disabled=true
+MouseButton=2
+Timeout=300
+
+[GesturesExclude]
+Comment=
+WindowsCount=0
+
+[Main]
+AlreadyImported=defaults
+Disabled=false
+Version=2
+
+[Voice]
+Shortcut=
 HOTEOF2
             chown "$NEW_USERNAME:$NEW_USERNAME" "$khotkeysrc"
             log_info "Created khotkeysrc with Kiosk Lock shortcut"
@@ -1880,8 +1906,22 @@ KGEOF
     fi
 
     # 7. Reload khotkeys to pick up new config
-    sudo -u "$NEW_USERNAME" qdbus org.kde.kded5 /kded org.kde.kded5.loadModule khotkeys 2>/dev/null || true
-    sudo -u "$NEW_USERNAME" qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure 2>/dev/null || true
+    # Need user's DBUS_SESSION_BUS_ADDRESS since we're running as root
+    local user_dbus=""
+    local kded_pid
+    kded_pid=$(pgrep -u "$NEW_USERNAME" kded5 2>/dev/null | head -1)
+    if [[ -n "$kded_pid" ]]; then
+        user_dbus=$(grep -z DBUS_SESSION_BUS_ADDRESS "/proc/$kded_pid/environ" 2>/dev/null | tr '\0' '\n' | sed 's/^DBUS_SESSION_BUS_ADDRESS=//')
+    fi
+    if [[ -n "$user_dbus" ]]; then
+        sudo -u "$NEW_USERNAME" DBUS_SESSION_BUS_ADDRESS="$user_dbus" \
+            qdbus org.kde.kded5 /kded org.kde.kded5.loadModule khotkeys 2>/dev/null || true
+        sudo -u "$NEW_USERNAME" DBUS_SESSION_BUS_ADDRESS="$user_dbus" \
+            qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure 2>/dev/null || true
+        log_info "khotkeys reloaded via D-Bus"
+    else
+        log_warn "Could not find user's D-Bus session — shortcut will work after next login/reboot"
+    fi
 
     log_info "Kiosk lock installed (Ctrl+Shift+L to toggle)"
 }
