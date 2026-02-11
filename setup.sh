@@ -550,14 +550,21 @@ phase2_setup_chrome_certs() {
 
         # Split multi-cert PEM files and import each cert individually
         # (certutil -A only imports the first cert from a multi-cert PEM)
-        # Skip chrome_root_store_certs.pem - those are already in Chrome's built-in store
+        # trusted_certs → "C,," (trusted CA for SSL)
+        # distrusted_certs → "p,p,p" (explicitly distrusted)
         local cert_count=0
+        local distrust_count=0
         local tmpdir=$(mktemp -d)
         chmod 755 "$tmpdir"  # certutil runs as user, needs read access
         for cert_file in "$certs_dir"/*.pem "$certs_dir"/*.crt "$certs_dir"/*.cer; do
             [[ -f "$cert_file" ]] || continue
             local base_name=$(basename "$cert_file" | sed 's/\.[^.]*$//')
-            [[ "$base_name" == "chrome_root_store_certs" ]] && continue
+
+            # Determine trust level from filename
+            local trust_flags="C,,"
+            if [[ "$base_name" == *distrusted* ]]; then
+                trust_flags="p,p,p"
+            fi
 
             # Split into individual certs
             csplit -z -f "$tmpdir/${base_name}_" -b '%02d.pem' "$cert_file" '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null || true
@@ -568,24 +575,28 @@ phase2_setup_chrome_certs() {
                 # Skip empty fragments
                 grep -q "BEGIN CERTIFICATE" "$single_cert" || continue
                 local cert_name="${base_name}_${cert_count}"
-                log_info "Installing cert: $cert_name"
+                log_info "Installing cert: $cert_name (trust: $trust_flags)"
 
                 sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -D -n "$cert_name" 2>/dev/null || true
-                if ! sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -A -t "C,," -n "$cert_name" -i "$single_cert"; then
+                if ! sudo -u "$NEW_USERNAME" certutil -d "sql:$nssdb_dir" -A -t "$trust_flags" -n "$cert_name" -i "$single_cert"; then
                     log_warn "Failed to install cert $cert_name into NSS"
                 fi
 
-                cp "$single_cert" "/usr/local/share/ca-certificates/${cert_name}.crt" 2>/dev/null || true
-                cert_count=$((cert_count + 1))
+                # Only add trusted certs to system CA store
+                if [[ "$trust_flags" == "C,," ]]; then
+                    cp "$single_cert" "/usr/local/share/ca-certificates/${cert_name}.crt" 2>/dev/null || true
+                    cert_count=$((cert_count + 1))
+                else
+                    distrust_count=$((distrust_count + 1))
+                fi
             done
         done
         rm -rf "$tmpdir"
         update-ca-certificates 2>/dev/null || true
-        log_info "Installed $cert_count certificate(s) into NSS + system store"
+        log_info "Installed $cert_count trusted + $distrust_count distrusted certificate(s) into NSS"
 
-        # Inject CACertificates into Chrome enterprise policy (Chrome Root Store)
-        # Only inject custom/org certs (trusted_certs, intermediate_certs),
-        # NOT chrome_root_store_certs.pem (those 116 certs are already built into Chrome)
+        # Inject CACertificates into Chrome enterprise policy
+        # Only inject trusted certs (not distrusted ones)
         mkdir -p "$(dirname "$policy_file")"
         if [[ ! -f "$policy_file" ]]; then
             echo '{}' > "$policy_file"
@@ -594,14 +605,15 @@ phase2_setup_chrome_certs() {
 import json, glob, os
 
 certs_dir = '$certs_dir'
-# Skip chrome_root_store_certs - they're already in Chrome's built-in trust store
-skip_files = {'chrome_root_store_certs.pem'}
+# Only inject trusted certs into Chrome policy (skip distrusted)
+skip_patterns = {'distrusted'}
 
 pem_certs = []
 for ext in ('*.pem', '*.crt', '*.cer'):
     for cert_file in sorted(glob.glob(os.path.join(certs_dir, ext))):
-        if os.path.basename(cert_file) in skip_files:
-            print(f'Skipping {os.path.basename(cert_file)} (already in Chrome Root Store)')
+        basename = os.path.basename(cert_file)
+        if any(p in basename for p in skip_patterns):
+            print(f'Skipping {basename} (distrusted)')
             continue
         with open(cert_file, 'r') as f:
             content = f.read()
@@ -721,12 +733,13 @@ import json, glob, os
 
 certs_dir = '$certs_src'
 policy_file = '$policy_dir/managed-extensions.json'
-skip_files = {'chrome_root_store_certs.pem'}
+skip_patterns = {'distrusted'}
 
 pem_certs = []
 for ext in ('*.pem', '*.crt', '*.cer'):
     for cert_file in sorted(glob.glob(os.path.join(certs_dir, ext))):
-        if os.path.basename(cert_file) in skip_files:
+        basename = os.path.basename(cert_file)
+        if any(p in basename for p in skip_patterns):
             continue
         with open(cert_file, 'r') as f:
             content = f.read()
