@@ -1272,15 +1272,16 @@ phase2_install_waydroid() {
     apt install -y waydroid python3 lxc
     log_info "Waydroid package installed"
 
-    # --- 4-7. ChromeOS/Shimboot kernel workarounds ---
-    # Detect if running on a ChromeOS kernel (shimboot)
-    local is_chromeos_kernel=false
-    if uname -r | grep -qi "chrome\|cros" || [[ -f /usr/share/vboot/bin/crossystem ]] || dmesg 2>/dev/null | grep -qi "Chromium OS LSM"; then
-        is_chromeos_kernel=true
-        log_info "ChromeOS kernel detected - applying shimboot workarounds"
-    fi
+    # --- 4-7. Shimboot kernel workarounds ---
+    # This setup script targets shimboot systems with kernel 5.4.x which has:
+    # - ChromeOS LSM blocking mount() through symlinks (breaks LXC)
+    # - Missing iptables CHECKSUM target
+    # - userfaultfd flags not supported (crashes Android 13 ART)
+    # Always apply these workarounds — this is a shimboot setup script.
+    local is_shimboot_kernel=true
+    log_info "Applying shimboot kernel workarounds"
 
-    if [[ "$is_chromeos_kernel" == "true" ]]; then
+    if [[ "$is_shimboot_kernel" == "true" ]]; then
         # --- 4. ChromeOS LSM sb_mount bypass (LD_PRELOAD mount fix) ---
         # ChromeOS kernel's LSM blocks mount() when the path traverses symlinks.
         # LXC's safe_mount() uses /proc/self/fd/<N> paths which are symlinks,
@@ -1354,7 +1355,7 @@ WRAPEOF
         # --- 6. Patch waydroid-net.sh: CHECKSUM iptables target (missing in ChromeOS kernel) ---
         local net_script="/usr/lib/waydroid/data/scripts/waydroid-net.sh"
         if [[ -f "$net_script" ]]; then
-            sed -i 's|-j CHECKSUM --checksum-fill$|-j CHECKSUM --checksum-fill 2>/dev/null || true|' "$net_script"
+            sed -i 's|-j CHECKSUM --checksum-fill\s*$|-j CHECKSUM --checksum-fill 2>/dev/null || true|' "$net_script"
             log_info "waydroid-net.sh CHECKSUM rules patched"
         fi
 
@@ -1366,9 +1367,7 @@ WRAPEOF
             echo "userfaultfd errno 38" >> "$seccomp_file"
             log_info "userfaultfd errno 38 added to seccomp profile"
         fi
-    else
-        log_info "Standard kernel detected - no shimboot workarounds needed"
-    fi
+    fi  # is_shimboot_kernel
 
     # --- 8. Initialize Waydroid with GAPPS ---
     log_info "Initializing Waydroid with GAPPS image (this may take a while)..."
@@ -1391,6 +1390,17 @@ WRAPEOF
         log_error "Waydroid init failed after 3 attempts. Run manually: waydroid init -s GAPPS -f"
     fi
 
+    # --- 8b. Re-patch active seccomp after init (belt-and-suspenders) ---
+    # waydroid init creates a copy at /var/lib/waydroid/lxc/waydroid/waydroid.seccomp
+    # which may not have our template patch if init re-generates it
+    if [[ "$is_shimboot_kernel" == "true" ]]; then
+        local active_seccomp="/var/lib/waydroid/lxc/waydroid/waydroid.seccomp"
+        if [[ -f "$active_seccomp" ]] && ! grep -q "^userfaultfd errno 38$" "$active_seccomp"; then
+            echo "userfaultfd errno 38" >> "$active_seccomp"
+            log_info "userfaultfd errno 38 added to active seccomp profile"
+        fi
+    fi
+
     # --- 9. Add persistent properties ---
     # Suppress ANR "not responding" dialogs (games trigger these frequently)
     # Disable strict mode (reduces crashes/dialogs in games)
@@ -1403,7 +1413,7 @@ WRAPEOF
         "persist.sys.anr_show_dialog=0"
         "persist.sys.strictmode.disable=true"
     )
-    if [[ "$is_chromeos_kernel" == "true" ]]; then
+    if [[ "$is_shimboot_kernel" == "true" ]]; then
         props+=("persist.device_config.runtime_native_boot.enable_uffd_gc=false")
     fi
 
@@ -1417,7 +1427,7 @@ WRAPEOF
     log_info "Waydroid properties configured (ANR suppressed)"
 
     # Add uffd_gc to waydroid.cfg [properties] section (survives waydroid init)
-    if [[ "$is_chromeos_kernel" == "true" ]]; then
+    if [[ "$is_shimboot_kernel" == "true" ]]; then
         if ! grep -q "enable_uffd_gc" "$waydroid_cfg" 2>/dev/null; then
             if grep -q '^\[properties\]' "$waydroid_cfg"; then
                 sed -i '/^\[properties\]/a persist.device_config.runtime_native_boot.enable_uffd_gc = false' "$waydroid_cfg"
