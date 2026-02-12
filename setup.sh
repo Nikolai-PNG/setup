@@ -1466,19 +1466,43 @@ WRAPEOF
     systemctl enable waydroid-container
     systemctl start waydroid-container 2>/dev/null || log_warn "Container start may need reboot"
 
-    # --- 12. Get Android ID for Play Store registration ---
-    sleep 5
+    # --- 12. Get Android ID for Play Store certification ---
+    # Container needs time to boot and populate the GSF database
+    log_info "Waiting for Android container to initialize..."
     local android_id=""
-    android_id=$(sudo waydroid shell -- sqlite3 /data/data/com.google.android.gsf/databases/gservices.db \
-        "select * from main where name = 'android_id';" 2>/dev/null | cut -d'|' -f2) || true
+    for i in $(seq 1 12); do
+        sleep 10
+        android_id=$(waydroid shell -- sqlite3 /data/data/com.google.android.gsf/databases/gservices.db \
+            "select * from main where name = 'android_id';" 2>/dev/null | cut -d'|' -f2) || true
+        [[ -n "$android_id" ]] && break
+        log_info "Waiting for Android ID... ($((i*10))s)"
+    done
 
     log_info "Waydroid installed and running"
+    echo ""
     if [[ -n "$android_id" ]]; then
-        log_info "Android ID: $android_id"
-        log_info "Register at: https://www.google.com/android/uncertified"
+        echo "========================================"
+        echo -e "  ${YELLOW}PLAY STORE CERTIFICATION${NC}"
+        echo "========================================"
+        echo ""
+        echo -e "  Your Android ID: ${GREEN}${android_id}${NC}"
+        echo ""
+        echo "  1. Open this URL in Chrome/Brave (NOT in Waydroid):"
+        echo -e "     ${GREEN}https://www.google.com/android/uncertified${NC}"
+        echo ""
+        echo "  2. Paste the Android ID above and register"
+        echo ""
+        echo "  3. Wait a few minutes, then restart Waydroid:"
+        echo -e "     ${GREEN}sudo systemctl restart waydroid-container${NC}"
+        echo ""
+        echo "========================================"
     else
-        log_warn "Android ID not yet available (container may still be booting)"
-        log_warn "Run later: sudo waydroid shell -- sqlite3 /data/data/com.google.android.gsf/databases/gservices.db \"select * from main where name = 'android_id';\""
+        echo -e "  ${YELLOW}Android ID not available yet.${NC}"
+        echo "  Run this after Waydroid finishes booting:"
+        echo ""
+        echo -e "  ${GREEN}sudo waydroid shell -- sqlite3 /data/data/com.google.android.gsf/databases/gservices.db \"select * from main where name = 'android_id';\" | cut -d'|' -f2${NC}"
+        echo ""
+        echo "  Then register at: https://www.google.com/android/uncertified"
     fi
 
     mark_done "install_waydroid"
