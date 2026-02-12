@@ -227,8 +227,16 @@ phase2_remove_bloat() {
         return
     fi
 
+    # Disable shimboot apt repo — packages are baked into image, repo is
+    # unreliable and causes 5+ minute hangs on every apt operation
+    if [[ -f /etc/apt/sources.list ]]; then
+        sed -i '/shimboot\.ading\.dev/s/^/#/' /etc/apt/sources.list
+        log_info "Disabled shimboot.ading.dev apt repo (unreliable)"
+    fi
+
     if command -v apt &>/dev/null; then
-        apt remove -y plasma-discover discover gnome-software flatpak snapd 2>/dev/null || true
+        apt remove -y plasma-discover discover gnome-software flatpak snapd \
+            kwalletmanager 2>/dev/null || true
         dpkg --remove --force-remove-reinstreq plasma-discover 2>/dev/null || true
         apt autoremove -y 2>/dev/null || true
         log_info "Bloat removed"
