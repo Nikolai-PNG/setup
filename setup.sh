@@ -1814,20 +1814,42 @@ VTEOF
     echo "$NEW_USERNAME ALL=(root) NOPASSWD: /usr/local/bin/kiosk-vt-ctl" > /etc/sudoers.d/kiosk-lock
     chmod 440 /etc/sudoers.d/kiosk-lock
 
-    # 5. Register Ctrl+Shift+L shortcut in khotkeys (kded module)
+    # 5. Register Ctrl+Shift+L shortcut
     local khotkeysrc="$user_home/.config/khotkeysrc"
+    local kglobalrc="$user_home/.config/kglobalshortcutsrc"
     local uuid="{f47ac10b-58cc-4372-a567-0e02b2c3d479}"
 
-    # Only add if not already present
+    # Get user's DBUS session (needed for all KDE operations below)
+    local user_dbus=""
+    local kded_pid
+    kded_pid=$(pgrep -u "$NEW_USERNAME" kded5 2>/dev/null | head -1)
+    if [[ -n "$kded_pid" ]]; then
+        user_dbus=$(grep -z DBUS_SESSION_BUS_ADDRESS "/proc/$kded_pid/environ" 2>/dev/null | tr '\0' '\n' | sed 's/^DBUS_SESSION_BUS_ADDRESS=//')
+    fi
+
+    # Helper to run commands as user with their D-Bus session
+    run_as_user() {
+        if [[ -n "$user_dbus" ]]; then
+            sudo -u "$NEW_USERNAME" DBUS_SESSION_BUS_ADDRESS="$user_dbus" "$@" 2>/dev/null
+        fi
+    }
+
+    # Step A: STOP khotkeys so KDE releases the config files
+    # Without this, KDE overwrites our disk changes with its in-memory state
+    if [[ -n "$user_dbus" ]]; then
+        run_as_user qdbus org.kde.kded5 /kded org.kde.kded5.unloadModule khotkeys || true
+        sleep 1
+        log_info "Stopped khotkeys module (releasing config files)"
+    fi
+
+    # Step B: Edit khotkeysrc on disk (KDE is no longer caching it)
     if ! grep -q "Kiosk Lock" "$khotkeysrc" 2>/dev/null; then
-        # Increment DataCount in [Data] section
         local current_count
         current_count=$(sed -n '/^\[Data\]$/,/^\[/{s/^DataCount=//p}' "$khotkeysrc" 2>/dev/null)
         if [[ -n "$current_count" ]]; then
             local new_count=$((current_count + 1))
             sed -i "/^\[Data\]$/,/^\[/{s/^DataCount=$current_count/DataCount=$new_count/}" "$khotkeysrc"
 
-            # Append new shortcut entry before [DirSelect Dialog] or at end of Data sections
             cat >> "$khotkeysrc" << HOTEOF
 
 [Data_${new_count}]
@@ -1857,9 +1879,8 @@ Type=SHORTCUT
 Uuid=$uuid
 HOTEOF
             chown "$NEW_USERNAME:$NEW_USERNAME" "$khotkeysrc"
-            log_info "Registered Ctrl+Shift+L in khotkeysrc"
+            log_info "Registered Ctrl+Shift+L in khotkeysrc (Data_${new_count})"
         else
-            # khotkeysrc doesn't exist or has no DataCount — create full config
             cat > "$khotkeysrc" << HOTEOF2
 [\$Version]
 update_info=konsole_globalaccel.upd:konsole_globalaccel
@@ -1914,18 +1935,14 @@ HOTEOF2
             log_info "Created khotkeysrc with Kiosk Lock shortcut"
         fi
     else
-        log_info "Kiosk Lock shortcut already registered"
+        log_info "Kiosk Lock already in khotkeysrc"
     fi
 
-    # 6. Register shortcut in kglobalshortcutsrc (required for KDE to activate it)
-    local kglobalrc="$user_home/.config/kglobalshortcutsrc"
+    # Step C: Edit kglobalshortcutsrc on disk
     if ! grep -q "$uuid" "$kglobalrc" 2>/dev/null; then
-        # Ensure [khotkeys] section exists with the binding
         if grep -q '^\[khotkeys\]' "$kglobalrc" 2>/dev/null; then
-            # Add our shortcut entry after the [khotkeys] section header
             sed -i "/^\[khotkeys\]/a ${uuid}=Ctrl+Shift+L,none,Kiosk Lock" "$kglobalrc"
         else
-            # Create the section
             cat >> "$kglobalrc" << KGEOF
 
 [khotkeys]
@@ -1937,22 +1954,13 @@ KGEOF
         log_info "Registered Ctrl+Shift+L in kglobalshortcutsrc"
     fi
 
-    # 7. Reload khotkeys to pick up new config
-    # Need user's DBUS_SESSION_BUS_ADDRESS since we're running as root
-    local user_dbus=""
-    local kded_pid
-    kded_pid=$(pgrep -u "$NEW_USERNAME" kded5 2>/dev/null | head -1)
-    if [[ -n "$kded_pid" ]]; then
-        user_dbus=$(grep -z DBUS_SESSION_BUS_ADDRESS "/proc/$kded_pid/environ" 2>/dev/null | tr '\0' '\n' | sed 's/^DBUS_SESSION_BUS_ADDRESS=//')
-    fi
+    # Step D: RESTART khotkeys — it re-reads configs from disk
     if [[ -n "$user_dbus" ]]; then
-        sudo -u "$NEW_USERNAME" DBUS_SESSION_BUS_ADDRESS="$user_dbus" \
-            qdbus org.kde.kded5 /kded org.kde.kded5.loadModule khotkeys 2>/dev/null || true
-        sudo -u "$NEW_USERNAME" DBUS_SESSION_BUS_ADDRESS="$user_dbus" \
-            qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure 2>/dev/null || true
-        log_info "khotkeys reloaded via D-Bus"
+        run_as_user qdbus org.kde.kded5 /kded org.kde.kded5.loadModule khotkeys || true
+        run_as_user qdbus org.kde.KWin /KWin org.kde.KWin.reconfigure || true
+        log_info "khotkeys restarted — Ctrl+Shift+L should work immediately"
     else
-        log_warn "Could not find user's D-Bus session — shortcut will work after next login/reboot"
+        log_warn "KDE not running — Ctrl+Shift+L will work after login/reboot"
     fi
 
     log_info "Kiosk lock installed (Ctrl+Shift+L to toggle)"
