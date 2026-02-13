@@ -1364,23 +1364,7 @@ WRAPEOF
         chmod +x /usr/bin/lxc-start
         log_info "lxc-start wrapper installed"
 
-        # --- 6. Patch waydroid-net.sh: CHECKSUM iptables target (missing in ChromeOS kernel) ---
-        # Kernel 5.4 lacks xt_CHECKSUM module — iptables fails with "No chain/target/match"
-        local net_script="/usr/lib/waydroid/data/scripts/waydroid-net.sh"
-        if [[ -f "$net_script" ]]; then
-            # Find lines with -j CHECKSUM, skip already-patched, append error suppression
-            sed -i '/-j CHECKSUM/{/2>\/dev\/null/!s/$/ 2>\/dev\/null || true/;}' "$net_script"
-            log_info "waydroid-net.sh CHECKSUM rules patched"
-        fi
-
-        # --- 7. Patch seccomp: userfaultfd errno 38 ---
-        # Android 13 ART tries userfaultfd() with flags not supported by kernel 5.4.
-        # Returns EINVAL instead of ENOSYS/EACCES, causing a fatal CHECK failure.
-        local seccomp_file="/usr/lib/waydroid/data/configs/waydroid.seccomp"
-        if [[ -f "$seccomp_file" ]] && ! grep -q "^userfaultfd errno 38$" "$seccomp_file"; then
-            echo "userfaultfd errno 38" >> "$seccomp_file"
-            log_info "userfaultfd errno 38 added to seccomp profile"
-        fi
+        # --- 6-7. (moved to after init — waydroid init overwrites these files) ---
     fi  # is_shimboot_kernel
 
     # --- 8. Initialize Waydroid with GAPPS ---
@@ -1404,10 +1388,23 @@ WRAPEOF
         log_error "Waydroid init failed after 3 attempts. Run manually: waydroid init -s GAPPS -f"
     fi
 
-    # --- 8b. Re-patch active seccomp after init (belt-and-suspenders) ---
-    # waydroid init creates a copy at /var/lib/waydroid/lxc/waydroid/waydroid.seccomp
-    # which may not have our template patch if init re-generates it
+    # --- 8b. Re-patch after init (waydroid init overwrites these files) ---
     if [[ "$is_shimboot_kernel" == "true" ]]; then
+        # CHECKSUM iptables target missing in kernel 5.4
+        local net_script="/usr/lib/waydroid/data/scripts/waydroid-net.sh"
+        if [[ -f "$net_script" ]]; then
+            sed -i '/-j CHECKSUM/{/2>\/dev\/null/!s/$/ 2>\/dev\/null || true/;}' "$net_script"
+            log_info "waydroid-net.sh CHECKSUM rules patched"
+        fi
+
+        # Seccomp template
+        local seccomp_file="/usr/lib/waydroid/data/configs/waydroid.seccomp"
+        if [[ -f "$seccomp_file" ]] && ! grep -q "^userfaultfd errno 38$" "$seccomp_file"; then
+            echo "userfaultfd errno 38" >> "$seccomp_file"
+            log_info "userfaultfd errno 38 added to template seccomp profile"
+        fi
+
+        # Active seccomp copy
         local active_seccomp="/var/lib/waydroid/lxc/waydroid/waydroid.seccomp"
         if [[ -f "$active_seccomp" ]] && ! grep -q "^userfaultfd errno 38$" "$active_seccomp"; then
             echo "userfaultfd errno 38" >> "$active_seccomp"
