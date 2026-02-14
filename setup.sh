@@ -370,6 +370,9 @@ phase2_setup_vpn() {
 source /opt/setup/setup.conf
 [[ -z "$TAILSCALE_EXIT_NODE" ]] && { echo "TAILSCALE_EXIT_NODE not set"; exit 1; }
 echo "Connecting to: $TAILSCALE_EXIT_NODE"
+# Break symlink if /etc/resolv.conf points to systemd-resolved stub
+# (systemd-resolved regenerates the stub and reverts DNS mid-session)
+sudo rm -f /etc/resolv.conf
 sudo bash -c 'echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf'
 sudo tailscale up --exit-node="$TAILSCALE_EXIT_NODE" --accept-dns=false --accept-routes --hostname="$HOSTNAME"
 echo "Connected!"
@@ -379,6 +382,8 @@ EOF
 #!/bin/bash
 echo "Disconnecting..."
 sudo tailscale up --exit-node= --accept-dns=false
+# Restore systemd-resolved symlink
+sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 sudo systemctl restart systemd-resolved 2>/dev/null || true
 echo "Disconnected"
 EOF
@@ -1242,6 +1247,23 @@ phase2_install_steam() {
     mark_done "install_steam"
 }
 
+phase2_install_signal() {
+    log_step "Installing Signal Desktop..."
+
+    if is_done "install_signal"; then
+        log_info "Already done, skipping"
+        return
+    fi
+
+    wget -O- https://updates.signal.org/desktop/apt/keys.asc | gpg --dearmor | tee /usr/share/keyrings/signal-desktop-keyring.gpg > /dev/null
+    wget -O /etc/apt/sources.list.d/signal-desktop.sources https://updates.signal.org/static/desktop/apt/signal-desktop.sources
+    apt update
+    apt install -y signal-desktop
+
+    log_info "Signal installed"
+    mark_done "install_signal"
+}
+
 phase2_install_waydroid() {
     log_step "Installing Waydroid (Android container)..."
 
@@ -2013,6 +2035,7 @@ run_phase2() {
     phase2_setup_chrome_certs
     phase2_install_moonlight
     phase2_install_steam
+    phase2_install_signal
     phase2_install_waydroid
     phase2_setup_mac_changer
     phase2_setup_kiosk_lock
